@@ -1,0 +1,34 @@
+[package]
+name = "rust-core"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rust-core"
+path = "src/main.rs"
+
+[dependencies]
+# 图像处理
+image = { version = "0.25", features = ["jpeg", "png", "bmp", "tiff"] }
+
+# 并行处理
+rayon = "1.10"
+
+# 序列化（JSON 通信协议）
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 临时文件管理（RAII 自动清理）
+tempfile = "3"
+
+# 错误处理
+thiserror = "2"
+
+# DPI 注入（JFIF APP0 density 字段）
+img-parts = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
