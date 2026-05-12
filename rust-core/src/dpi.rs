@@ -21,7 +21,7 @@ pub fn inject_dpi(path: &Path, dpi: u16) -> std::io::Result<()> {
         if marker_len >= 16 && &patched[6..11] == b"JFIF\0" {
             // units 字段在偏移 11（相对于文件开头）
             patched[11] = 1; // 1 = DPI
-            // Xdensity 在偏移 12-13，Ydensity 在 14-15
+                             // Xdensity 在偏移 12-13，Ydensity 在 14-15
             let dpi_bytes = dpi.to_be_bytes();
             patched[12] = dpi_bytes[0];
             patched[13] = dpi_bytes[1];

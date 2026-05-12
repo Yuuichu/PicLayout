@@ -92,7 +92,15 @@ function handleProgress(msg: ProgressMessage) {
   } else if (msg.type === 'completed') {
     store.processing = false
     store.outputFiles = msg.outputs
+    store.processedCount = msg.processed_count
+    store.failedImages = msg.failed_images
+    store.warnings = msg.warnings
     store.setProgress(100, '处理完成')
+  } else if (msg.type === 'cancelled') {
+    store.processing = false
+    store.cancelledMessage = msg.message
+    store.partialOutputs = msg.partial_outputs
+    store.setProgress(store.progress, '已取消')
   } else if (msg.type === 'error') {
     store.processing = false
     store.errorMessage = msg.message
@@ -115,6 +123,7 @@ async function startCollage() {
     final_size: s.finalSize,
     dpi: s.dpi,
     background_color: s.backgroundColor,
+    overwrite: false,
     watermark:
       s.watermarkEnabled && s.watermark.path
         ? { ...s.watermark }
@@ -130,7 +139,7 @@ async function startCollage() {
     const plainConfig = JSON.parse(JSON.stringify(config))
     await window.electronAPI.startCollage(plainConfig)
   } catch (err: unknown) {
-    if (!store.outputFiles.length) {
+    if (!store.outputFiles.length && !store.cancelledMessage) {
       store.errorMessage = err instanceof Error ? err.message : String(err)
       store.processing = false
     }

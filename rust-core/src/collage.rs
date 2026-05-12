@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use image::{DynamicImage, ImageBuffer, Rgba, imageops};
+use image::{imageops, DynamicImage, ImageBuffer, Rgba};
 
 use crate::{config::CollageConfig, dpi::inject_dpi, error::AppError, progress};
 
@@ -42,7 +42,12 @@ pub fn create_collage(
                 }
                 let x_off = col * bs;
                 let y_off = row_offset * bs;
-                imageops::overlay(&mut chunk, &images[idx].to_rgba8(), x_off as i64, y_off as i64);
+                imageops::overlay(
+                    &mut chunk,
+                    &images[idx].to_rgba8(),
+                    x_off as i64,
+                    y_off as i64,
+                );
             }
         }
 

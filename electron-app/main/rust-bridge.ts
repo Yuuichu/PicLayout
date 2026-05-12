@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { app } from 'electron'
+import { existsSync } from 'fs'
 
 export interface CollageConfig {
   image_paths: string[]
@@ -11,6 +12,7 @@ export interface CollageConfig {
   final_size?: number
   dpi?: number
   background_color?: string
+  overwrite?: boolean
   watermark?: {
     path: string
     scale_percent?: number
@@ -19,10 +21,29 @@ export interface CollageConfig {
   } | null
 }
 
+export interface FailedImage {
+  path: string
+  message: string
+}
+
+export interface CollageResult {
+  outputs: string[]
+  processed_count: number
+  failed_images: FailedImage[]
+  warnings: string[]
+}
+
 export type ProgressMessage =
   | { type: 'image_processed'; index: number; total: number }
   | { type: 'stage_changed'; stage: string; message: string }
-  | { type: 'completed'; outputs: string[] }
+  | {
+      type: 'completed'
+      outputs: string[]
+      processed_count: number
+      failed_images: FailedImage[]
+      warnings: string[]
+    }
+  | { type: 'cancelled'; message: string; partial_outputs: string[] }
   | { type: 'error'; message: string }
 
 function getRustCorePath(): string {
@@ -40,15 +61,34 @@ function getRustCorePath(): string {
   }
 }
 
+function getExpectedOutputPaths(config: CollageConfig): string[] {
+  const paths = [
+    join(config.output_dir, `${config.prefix}_collage.jpg`),
+    join(config.output_dir, `${config.prefix}_collage_final.jpg`),
+  ]
+  if (config.watermark) {
+    paths.push(join(config.output_dir, `${config.prefix}_collage_final_watermarked.jpg`))
+  }
+  return paths
+}
+
+function existingPaths(paths: string[]): string[] {
+  return paths.filter((path) => existsSync(path))
+}
+
 export class RustBridge {
   private process: ChildProcess | null = null
+  private cancelled = false
+  private expectedOutputs: string[] = []
 
   async start(
     config: CollageConfig,
     onProgress: (msg: ProgressMessage) => void
-  ): Promise<string[]> {
+  ): Promise<CollageResult> {
     return new Promise((resolve, reject) => {
       const exePath = getRustCorePath()
+      this.cancelled = false
+      this.expectedOutputs = getExpectedOutputPaths(config)
 
       this.process = spawn(exePath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -72,7 +112,12 @@ export class RustBridge {
             const msg: ProgressMessage = JSON.parse(line)
             onProgress(msg)
             if (msg.type === 'completed') {
-              resolve(msg.outputs)
+              resolve({
+                outputs: msg.outputs,
+                processed_count: msg.processed_count,
+                failed_images: msg.failed_images,
+                warnings: msg.warnings,
+              })
             } else if (msg.type === 'error') {
               reject(new Error(msg.message))
             }
@@ -87,11 +132,32 @@ export class RustBridge {
       })
 
       this.process.on('error', (err) => {
+        this.process = null
+        this.expectedOutputs = []
+        this.cancelled = false
         reject(new Error(`启动 rust-core 失败: ${err.message}\n路径: ${exePath}`))
       })
 
       this.process.on('close', (code) => {
+        const wasCancelled = this.cancelled
+        const partialOutputs = existingPaths(this.expectedOutputs)
         this.process = null
+        this.expectedOutputs = []
+        this.cancelled = false
+        if (wasCancelled) {
+          onProgress({
+            type: 'cancelled',
+            message: '已取消处理，可能存在半成品文件。',
+            partial_outputs: partialOutputs,
+          })
+          resolve({
+            outputs: partialOutputs,
+            processed_count: 0,
+            failed_images: [],
+            warnings: ['任务已取消'],
+          })
+          return
+        }
         if (code !== 0 && code !== null) {
           reject(new Error(`rust-core 以非零代码退出: ${code}`))
         }
@@ -101,8 +167,8 @@ export class RustBridge {
 
   cancel(): void {
     if (this.process) {
+      this.cancelled = true
       this.process.kill()
-      this.process = null
     }
   }
 

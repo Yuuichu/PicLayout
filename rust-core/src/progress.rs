@@ -1,5 +1,11 @@
 use serde::Serialize;
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FailedImage {
+    pub path: String,
+    pub message: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProgressMessage {
@@ -13,6 +19,14 @@ pub enum ProgressMessage {
     },
     Completed {
         outputs: Vec<String>,
+        processed_count: usize,
+        failed_images: Vec<FailedImage>,
+        warnings: Vec<String>,
+    },
+    #[allow(dead_code)]
+    Cancelled {
+        message: String,
+        partial_outputs: Vec<String>,
     },
     Error {
         message: String,

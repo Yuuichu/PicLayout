@@ -8,6 +8,7 @@ export interface CollageConfig {
   dpi: number
   background_color: BackgroundColor
   watermark: WatermarkConfig | null
+  overwrite?: boolean
 }
 
 export type BackgroundColor =
@@ -20,10 +21,29 @@ export interface WatermarkConfig {
   position_y_percent: number
 }
 
+export interface FailedImage {
+  path: string
+  message: string
+}
+
+export interface CollageResult {
+  outputs: string[]
+  processed_count: number
+  failed_images: FailedImage[]
+  warnings: string[]
+}
+
 export type ProgressMessage =
   | { type: 'image_processed'; index: number; total: number }
   | { type: 'stage_changed'; stage: string; message: string }
-  | { type: 'completed'; outputs: string[] }
+  | {
+      type: 'completed'
+      outputs: string[]
+      processed_count: number
+      failed_images: FailedImage[]
+      warnings: string[]
+    }
+  | { type: 'cancelled'; message: string; partial_outputs: string[] }
   | { type: 'error'; message: string }
 
 export const BACKGROUND_COLOR_OPTIONS: { value: BackgroundColor; label: string; hex: string }[] = [

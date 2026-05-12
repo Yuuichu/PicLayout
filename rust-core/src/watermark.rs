@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use image::{DynamicImage, GenericImage, GenericImageView, ImageBuffer, Rgba, imageops::FilterType};
+use image::{imageops::FilterType, DynamicImage, GenericImageView, Rgba};
 
 use crate::{config::WatermarkConfig, dpi::inject_dpi, error::AppError};
 

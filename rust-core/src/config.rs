@@ -18,6 +18,8 @@ pub struct CollageConfig {
     #[serde(default)]
     pub background_color: BackgroundColor,
     pub watermark: Option<WatermarkConfig>,
+    #[serde(default)]
+    pub overwrite: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -64,10 +66,24 @@ pub struct WatermarkConfig {
     pub position_y_percent: f32,
 }
 
-fn default_resample_size() -> u32 { 4000 }
-fn default_border_size() -> u32 { 4200 }
-fn default_final_size() -> u32 { 10000 }
-fn default_dpi() -> u32 { 300 }
-fn default_watermark_scale() -> f32 { 100.0 }
-fn default_watermark_x() -> f32 { 50.0 }
-fn default_watermark_y() -> f32 { 95.0 }
+fn default_resample_size() -> u32 {
+    4000
+}
+fn default_border_size() -> u32 {
+    4200
+}
+fn default_final_size() -> u32 {
+    10000
+}
+fn default_dpi() -> u32 {
+    300
+}
+fn default_watermark_scale() -> f32 {
+    100.0
+}
+fn default_watermark_x() -> f32 {
+    50.0
+}
+fn default_watermark_y() -> f32 {
+    95.0
+}

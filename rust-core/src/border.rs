@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use image::{DynamicImage, ImageBuffer, Rgba, imageops, imageops::FilterType};
+use image::{imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgba};
 
 use crate::{config::CollageConfig, dpi::inject_dpi, error::AppError};
 
@@ -42,7 +42,12 @@ pub fn add_final_border_and_resize(
     let mut canvas: ImageBuffer<Rgba<u8>, Vec<u8>> =
         ImageBuffer::from_pixel(canvas_w, canvas_h, bg_pixel);
 
-    imageops::overlay(&mut canvas, &scaled.to_rgba8(), border_px as i64, border_px as i64);
+    imageops::overlay(
+        &mut canvas,
+        &scaled.to_rgba8(),
+        border_px as i64,
+        border_px as i64,
+    );
 
     DynamicImage::ImageRgba8(canvas).save(output)?;
     inject_dpi(output, config.dpi as u16)?;

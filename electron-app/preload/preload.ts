@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CollageConfig, ProgressMessage } from '../main/rust-bridge'
+import type { CollageConfig, CollageResult, ProgressMessage } from '../main/rust-bridge'
 
 // 暴露给渲染进程的安全 API
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('dialog:openDirectory'),
 
   // 拼贴处理
-  startCollage: (config: CollageConfig): Promise<string[]> =>
+  startCollage: (config: CollageConfig): Promise<CollageResult> =>
     ipcRenderer.invoke('collage:start', config),
 
   cancelCollage: (): Promise<void> =>
@@ -33,7 +33,7 @@ export type ElectronAPI = {
   openImages: () => Promise<string[]>
   openWatermark: () => Promise<string | null>
   openDirectory: () => Promise<string | null>
-  startCollage: (config: CollageConfig) => Promise<string[]>
+  startCollage: (config: CollageConfig) => Promise<CollageResult>
   cancelCollage: () => Promise<void>
   onProgress: (callback: (msg: ProgressMessage) => void) => () => void
 }

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
-import type { BackgroundColor, WatermarkConfig } from '../types/protocol'
+import type { BackgroundColor, FailedImage, WatermarkConfig } from '../types/protocol'
 
 // 用户设置（持久化到 localStorage）
 const SETTINGS_KEY = 'piclayout_settings'
@@ -27,7 +27,7 @@ function loadSettings(): Settings {
 
 function defaultSettings(): Settings {
   return {
-    maxImages: 100,
+    maxImages: 30,
     resampleSize: 4000,
     borderSize: 4200,
     finalSize: 10000,
@@ -64,12 +64,22 @@ export const useAppStore = defineStore('app', () => {
   const progress = ref(0)        // 0–100
   const statusMessage = ref('')
   const outputFiles = ref<string[]>([])
+  const processedCount = ref(0)
+  const failedImages = ref<FailedImage[]>([])
+  const warnings = ref<string[]>([])
+  const cancelledMessage = ref('')
+  const partialOutputs = ref<string[]>([])
   const errorMessage = ref('')
 
   function resetProgress() {
     progress.value = 0
     statusMessage.value = ''
     outputFiles.value = []
+    processedCount.value = 0
+    failedImages.value = []
+    warnings.value = []
+    cancelledMessage.value = ''
+    partialOutputs.value = []
     errorMessage.value = ''
   }
 
@@ -87,6 +97,11 @@ export const useAppStore = defineStore('app', () => {
     progress,
     statusMessage,
     outputFiles,
+    processedCount,
+    failedImages,
+    warnings,
+    cancelledMessage,
+    partialOutputs,
     errorMessage,
     resetProgress,
     setProgress,

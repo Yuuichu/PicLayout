@@ -17,21 +17,36 @@
       <button class="btn-success" :disabled="processing" @click="selectImages">
         选择图片
       </button>
+      <button
+        v-if="store.selectedFiles.length > 0"
+        class="btn-secondary"
+        :disabled="processing"
+        @click="clearImages"
+      >
+        清空
+      </button>
       <span class="file-count">
         {{ fileCountText }}
       </span>
     </div>
 
-    <div v-if="store.selectedFiles.length > 0" class="file-list-preview">
-      <span
-        v-for="(f, i) in previewFiles"
+    <div v-if="store.selectedFiles.length > 0" class="file-list">
+      <div
+        v-for="(f, i) in store.selectedFiles"
         :key="i"
-        class="file-chip"
+        class="file-row"
         :title="f"
-      >{{ basename(f) }}</span>
-      <span v-if="store.selectedFiles.length > MAX_PREVIEW" class="file-chip more">
-        +{{ store.selectedFiles.length - MAX_PREVIEW }} 张
-      </span>
+      >
+        <span class="file-index">{{ i + 1 }}</span>
+        <span class="file-name">{{ basename(f) }}</span>
+        <button
+          class="remove-btn"
+          :disabled="processing"
+          @click="removeImage(i)"
+        >
+          移除
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -41,7 +56,6 @@ import { computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
 
 const store = useAppStore()
-const MAX_PREVIEW = 8
 
 const processing = computed(() => store.processing)
 
@@ -50,8 +64,6 @@ const fileCountText = computed(() => {
   if (n === 0) return '未选择图片'
   return `已选择 ${n} 张图片`
 })
-
-const previewFiles = computed(() => store.selectedFiles.slice(0, MAX_PREVIEW))
 
 function basename(path: string): string {
   return path.replace(/\\/g, '/').split('/').pop() ?? path
@@ -68,6 +80,14 @@ async function selectImages() {
   }
 
   store.setSelectedFiles(files)
+}
+
+function removeImage(index: number) {
+  store.setSelectedFiles(store.selectedFiles.filter((_, i) => i !== index))
+}
+
+function clearImages() {
+  store.setSelectedFiles([])
 }
 </script>
 
@@ -90,30 +110,44 @@ async function selectImages() {
   font-weight: 500;
 }
 
-.file-list-preview {
+.file-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   max-height: 80px;
   overflow-y: auto;
 }
 
-.file-chip {
+.file-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  padding: 2px 8px;
+  padding: 4px 6px;
   font-size: 12px;
   color: var(--color-text-secondary);
-  max-width: 160px;
+}
+
+.file-index {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.file-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.file-chip.more {
-  background: var(--color-primary);
-  color: white;
-  border-color: var(--color-primary);
+.remove-btn {
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
 }
 </style>

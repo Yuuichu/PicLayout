@@ -7,6 +7,7 @@
       <div class="form-row">
         <label>最大图片数量</label>
         <input v-model.number="s.maxImages" type="number" min="1" max="500" style="max-width:90px" @change="save" />
+        <span class="hint">默认建议 30 张以内</span>
       </div>
 
       <div class="form-row">
@@ -53,6 +54,8 @@
         </div>
         <span class="hint">{{ currentColorLabel }}</span>
       </div>
+
+      <p class="memory-tip">高分辨率参数和大量图片会显著增加内存占用；如处理失败，请降低图片数量或尺寸参数。</p>
     </div>
 
   </div>
@@ -109,5 +112,11 @@ function save() {
 
 .color-swatch:hover:not(.active) {
   border-color: #999;
+}
+
+.memory-tip {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 </style>

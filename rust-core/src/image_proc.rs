@@ -1,4 +1,4 @@
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba, imageops, imageops::FilterType};
+use image::{imageops, imageops::FilterType, DynamicImage, GenericImageView, ImageBuffer, Rgba};
 
 use crate::config::BackgroundColor;
 
@@ -18,7 +18,11 @@ pub fn resample(img: DynamicImage, max_size: u32) -> DynamicImage {
 }
 
 /// 添加正方形边框：将图片（已由 resample 缩放好）居中放置在 border_size × border_size 背景上
-pub fn add_square_border(img: DynamicImage, border_size: u32, bg: &BackgroundColor) -> DynamicImage {
+pub fn add_square_border(
+    img: DynamicImage,
+    border_size: u32,
+    bg: &BackgroundColor,
+) -> DynamicImage {
     let (iw, ih) = img.dimensions();
 
     let [r, g, b] = bg.to_rgb();
@@ -28,7 +32,12 @@ pub fn add_square_border(img: DynamicImage, border_size: u32, bg: &BackgroundCol
     let x_offset = (border_size.saturating_sub(iw)) / 2;
     let y_offset = (border_size.saturating_sub(ih)) / 2;
 
-    imageops::overlay(&mut canvas, &img.to_rgba8(), x_offset as i64, y_offset as i64);
+    imageops::overlay(
+        &mut canvas,
+        &img.to_rgba8(),
+        x_offset as i64,
+        y_offset as i64,
+    );
 
     DynamicImage::ImageRgba8(canvas)
 }

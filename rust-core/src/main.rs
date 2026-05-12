@@ -11,7 +11,7 @@ mod watermark;
 use std::io::{self, BufRead};
 
 use config::CollageConfig;
-use progress::{ProgressMessage, send};
+use progress::{send, ProgressMessage};
 
 fn main() {
     // 从 stdin 读取一行 JSON 配置
@@ -45,12 +45,17 @@ fn main() {
     };
 
     match pipeline::run(&config) {
-        Ok(outputs) => {
+        Ok(report) => {
+            let outputs = report
+                .outputs
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
             send(&ProgressMessage::Completed {
-                outputs: outputs
-                    .iter()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect(),
+                outputs,
+                processed_count: report.processed_count,
+                failed_images: report.failed_images,
+                warnings: report.warnings,
             });
         }
         Err(e) => {
