@@ -23,6 +23,7 @@
           {{ basename(f) }}
         </li>
       </ul>
+      <button class="btn-secondary open-dir-btn" @click="openOutputDir">打开输出目录</button>
       <div v-if="store.warnings.length" class="warning-list">
         <p v-for="warning in store.warnings" :key="warning">{{ warning }}</p>
       </div>
@@ -66,6 +67,14 @@ function basename(path: string): string {
 async function cancel() {
   store.statusMessage = '正在取消...'
   await window.electronAPI.cancelCollage()
+}
+
+async function openOutputDir() {
+  if (!store.settings.outputDir) return
+  const error = await window.electronAPI.openPath(store.settings.outputDir)
+  if (error) {
+    store.errorMessage = error
+  }
 }
 </script>
 
@@ -134,6 +143,12 @@ async function cancel() {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.open-dir-btn {
+  margin-top: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
 }
 
 .warning-list,

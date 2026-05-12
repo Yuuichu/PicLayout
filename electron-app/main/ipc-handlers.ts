@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { rustBridge, CollageConfig, ProgressMessage } from './rust-bridge'
 
 export function registerIpcHandlers(win: BrowserWindow): void {
@@ -22,6 +22,16 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
+  // 选择 ICC profile
+  ipcMain.handle('dialog:openIccProfile', async () => {
+    const result = await dialog.showOpenDialog(win, {
+      title: '选择 ICC profile',
+      filters: [{ name: 'ICC Profile', extensions: ['icc', 'icm'] }],
+      properties: ['openFile'],
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
   // 选择导出目录
   ipcMain.handle('dialog:openDirectory', async () => {
     const result = await dialog.showOpenDialog(win, {
@@ -29,6 +39,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       properties: ['openDirectory', 'createDirectory'],
     })
     return result.canceled ? null : result.filePaths[0]
+  })
+
+  // 打开系统路径
+  ipcMain.handle('shell:openPath', async (_event, path: string) => {
+    return shell.openPath(path)
   })
 
   // 启动拼贴处理

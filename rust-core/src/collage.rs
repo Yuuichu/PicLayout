@@ -2,7 +2,7 @@ use std::path::Path;
 
 use image::{imageops, DynamicImage, ImageBuffer, Rgba};
 
-use crate::{config::CollageConfig, dpi::inject_dpi, error::AppError, progress};
+use crate::{config::CollageConfig, error::AppError, jpeg_output::save_user_jpeg, progress};
 
 const CHUNK_SIZE: u32 = 2; // 每次处理的行数，控制内存占用
 
@@ -11,6 +11,7 @@ pub fn create_collage(
     images: &[DynamicImage],
     output_path: &Path,
     config: &CollageConfig,
+    icc_profile: Option<&[u8]>,
 ) -> Result<(), AppError> {
     let num = images.len() as u32;
     let grid_cols = (num as f64).sqrt().ceil() as u32;
@@ -53,8 +54,12 @@ pub fn create_collage(
 
         if grid_rows <= CHUNK_SIZE {
             // 只有一个 chunk，直接保存为最终输出
-            DynamicImage::ImageRgba8(chunk).save(output_path)?;
-            inject_dpi(output_path, config.dpi as u16)?;
+            save_user_jpeg(
+                &DynamicImage::ImageRgba8(chunk),
+                output_path,
+                config,
+                icc_profile,
+            )?;
             progress::send(&progress::ProgressMessage::StageChanged {
                 stage: progress::Stage::CreatingCollage,
                 message: format!("拼贴图已创建（{}×{} 网格）", grid_cols, grid_rows),
@@ -62,9 +67,8 @@ pub fn create_collage(
             return Ok(());
         }
 
-        let chunk_path = temp_dir.path().join(format!("chunk_{}.jpg", start_row));
+        let chunk_path = temp_dir.path().join(format!("chunk_{}.png", start_row));
         DynamicImage::ImageRgba8(chunk).save(&chunk_path)?;
-        inject_dpi(&chunk_path, config.dpi as u16)?;
         chunk_paths.push(chunk_path);
     }
 
@@ -78,8 +82,12 @@ pub fn create_collage(
         imageops::overlay(&mut final_canvas, &chunk_img, 0, y_off);
         y_off += ch;
     }
-    DynamicImage::ImageRgba8(final_canvas).save(output_path)?;
-    inject_dpi(output_path, config.dpi as u16)?;
+    save_user_jpeg(
+        &DynamicImage::ImageRgba8(final_canvas),
+        output_path,
+        config,
+        icc_profile,
+    )?;
 
     progress::send(&progress::ProgressMessage::StageChanged {
         stage: progress::Stage::CreatingCollage,

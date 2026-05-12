@@ -51,7 +51,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from './stores/appStore'
-import type { CollageConfig, ProgressMessage } from './types/protocol'
+import type { CollageConfig, CollageResult, ProgressMessage } from './types/protocol'
 import FileSelector from './components/FileSelector.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import WatermarkSettings from './components/WatermarkSettings.vue'
@@ -61,7 +61,7 @@ const store = useAppStore()
 const activeTab = ref<'home' | 'settings'>('home')
 
 const canStart = computed(
-  () => store.selectedFiles.length > 0 && !store.processing
+  () => store.selectedFiles.length > 0 && !!store.settings.outputDir && !store.processing
 )
 
 // 进度处理：阶段权重映射
@@ -107,16 +107,22 @@ function handleProgress(msg: ProgressMessage) {
   }
 }
 
+function applyCompletedResult(result: CollageResult) {
+  store.processing = false
+  store.outputFiles = result.outputs
+  store.processedCount = result.processed_count
+  store.failedImages = result.failed_images
+  store.warnings = result.warnings
+  store.setProgress(100, '处理完成')
+}
+
 async function startCollage() {
   if (!canStart.value) return
-
-  const outputDir = await window.electronAPI.openDirectory()
-  if (!outputDir) return
 
   const s = store.settings
   const config: CollageConfig = {
     image_paths: store.selectedFiles,
-    output_dir: outputDir,
+    output_dir: s.outputDir,
     prefix: s.prefix || 'output',
     resample_size: s.resampleSize,
     border_size: s.borderSize,
@@ -124,6 +130,19 @@ async function startCollage() {
     dpi: s.dpi,
     background_color: s.backgroundColor,
     overwrite: false,
+    output_settings: {
+      jpeg_quality: s.jpegQuality,
+      auto_orient: s.autoOrient,
+    },
+    color_management: {
+      enabled: s.colorManagementEnabled,
+      target_profile: s.targetProfileMode,
+      target_profile_path:
+        s.targetProfileMode === 'custom' && s.targetProfilePath
+          ? s.targetProfilePath
+          : null,
+      rendering_intent: s.renderingIntent,
+    },
     watermark:
       s.watermarkEnabled && s.watermark.path
         ? { ...s.watermark }
@@ -137,7 +156,10 @@ async function startCollage() {
   try {
     // 将响应式 Proxy 转为纯对象，避免 IPC 结构化克隆失败
     const plainConfig = JSON.parse(JSON.stringify(config))
-    await window.electronAPI.startCollage(plainConfig)
+    const result = await window.electronAPI.startCollage(plainConfig)
+    if (store.processing && !store.cancelledMessage && !store.errorMessage) {
+      applyCompletedResult(result)
+    }
   } catch (err: unknown) {
     if (!store.outputFiles.length && !store.cancelledMessage) {
       store.errorMessage = err instanceof Error ? err.message : String(err)

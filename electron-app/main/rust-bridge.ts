@@ -13,6 +13,16 @@ export interface CollageConfig {
   dpi?: number
   background_color?: string
   overwrite?: boolean
+  output_settings?: {
+    jpeg_quality?: number
+    auto_orient?: boolean
+  }
+  color_management?: {
+    enabled?: boolean
+    target_profile?: 'srgb' | 'custom'
+    target_profile_path?: string | null
+    rendering_intent?: 'perceptual' | 'relative_colorimetric'
+  }
   watermark?: {
     path: string
     scale_percent?: number
@@ -89,6 +99,39 @@ export class RustBridge {
       const exePath = getRustCorePath()
       this.cancelled = false
       this.expectedOutputs = getExpectedOutputPaths(config)
+      let settled = false
+
+      const resolveOnce = (result: CollageResult) => {
+        if (settled) return
+        settled = true
+        resolve(result)
+      }
+
+      const rejectOnce = (error: Error) => {
+        if (settled) return
+        settled = true
+        reject(error)
+      }
+
+      const handleLine = (line: string) => {
+        if (!line.trim()) return
+        try {
+          const msg: ProgressMessage = JSON.parse(line)
+          onProgress(msg)
+          if (msg.type === 'completed') {
+            resolveOnce({
+              outputs: msg.outputs,
+              processed_count: msg.processed_count,
+              failed_images: msg.failed_images,
+              warnings: msg.warnings,
+            })
+          } else if (msg.type === 'error') {
+            rejectOnce(new Error(msg.message))
+          }
+        } catch (e) {
+          console.error('解析进度消息失败:', line, e)
+        }
+      }
 
       this.process = spawn(exePath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -107,23 +150,7 @@ export class RustBridge {
         buffer = lines.pop() ?? ''
 
         for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const msg: ProgressMessage = JSON.parse(line)
-            onProgress(msg)
-            if (msg.type === 'completed') {
-              resolve({
-                outputs: msg.outputs,
-                processed_count: msg.processed_count,
-                failed_images: msg.failed_images,
-                warnings: msg.warnings,
-              })
-            } else if (msg.type === 'error') {
-              reject(new Error(msg.message))
-            }
-          } catch (e) {
-            console.error('解析进度消息失败:', line, e)
-          }
+          handleLine(line)
         }
       })
 
@@ -135,10 +162,13 @@ export class RustBridge {
         this.process = null
         this.expectedOutputs = []
         this.cancelled = false
-        reject(new Error(`启动 rust-core 失败: ${err.message}\n路径: ${exePath}`))
+        rejectOnce(new Error(`启动 rust-core 失败: ${err.message}\n路径: ${exePath}`))
       })
 
       this.process.on('close', (code) => {
+        handleLine(buffer)
+        buffer = ''
+
         const wasCancelled = this.cancelled
         const partialOutputs = existingPaths(this.expectedOutputs)
         this.process = null
@@ -150,7 +180,7 @@ export class RustBridge {
             message: '已取消处理，可能存在半成品文件。',
             partial_outputs: partialOutputs,
           })
-          resolve({
+          resolveOnce({
             outputs: partialOutputs,
             processed_count: 0,
             failed_images: [],
@@ -159,7 +189,11 @@ export class RustBridge {
           return
         }
         if (code !== 0 && code !== null) {
-          reject(new Error(`rust-core 以非零代码退出: ${code}`))
+          rejectOnce(new Error(`rust-core 以非零代码退出: ${code}`))
+          return
+        }
+        if (!settled) {
+          rejectOnce(new Error('rust-core 已退出，但没有返回完成消息'))
         }
       })
     })

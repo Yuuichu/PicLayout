@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
-import type { BackgroundColor, FailedImage, WatermarkConfig } from '../types/protocol'
+import type {
+  BackgroundColor,
+  FailedImage,
+  RenderingIntent,
+  TargetProfileMode,
+  WatermarkConfig,
+} from '../types/protocol'
 
 // 用户设置（持久化到 localStorage）
 const SETTINGS_KEY = 'piclayout_settings'
@@ -13,6 +19,13 @@ interface Settings {
   dpi: number
   backgroundColor: BackgroundColor
   prefix: string
+  outputDir: string
+  jpegQuality: number
+  autoOrient: boolean
+  colorManagementEnabled: boolean
+  targetProfileMode: TargetProfileMode
+  targetProfilePath: string
+  renderingIntent: RenderingIntent
   watermarkEnabled: boolean
   watermark: WatermarkConfig
 }
@@ -34,6 +47,13 @@ function defaultSettings(): Settings {
     dpi: 300,
     backgroundColor: 'white',
     prefix: 'output',
+    outputDir: '',
+    jpegQuality: 95,
+    autoOrient: true,
+    colorManagementEnabled: true,
+    targetProfileMode: 'srgb',
+    targetProfilePath: '',
+    renderingIntent: 'perceptual',
     watermarkEnabled: false,
     watermark: {
       path: '',
@@ -57,6 +77,28 @@ export const useAppStore = defineStore('app', () => {
 
   function setSelectedFiles(files: string[]) {
     selectedFiles.value = files
+  }
+
+  function appendSelectedFiles(files: string[]) {
+    const seen = new Set(selectedFiles.value)
+    const merged = [...selectedFiles.value]
+    for (const file of files) {
+      if (!seen.has(file)) {
+        seen.add(file)
+        merged.push(file)
+      }
+    }
+    selectedFiles.value = merged
+  }
+
+  function moveSelectedFile(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || from >= selectedFiles.value.length || to >= selectedFiles.value.length) {
+      return
+    }
+    const next = [...selectedFiles.value]
+    const [item] = next.splice(from, 1)
+    next.splice(to, 0, item)
+    selectedFiles.value = next
   }
 
   // 处理状态
@@ -93,6 +135,8 @@ export const useAppStore = defineStore('app', () => {
     saveSettings,
     selectedFiles,
     setSelectedFiles,
+    appendSelectedFiles,
+    moveSelectedFile,
     processing,
     progress,
     statusMessage,

@@ -20,6 +20,10 @@ pub struct CollageConfig {
     pub watermark: Option<WatermarkConfig>,
     #[serde(default)]
     pub overwrite: bool,
+    #[serde(default)]
+    pub output_settings: OutputSettings,
+    #[serde(default)]
+    pub color_management: ColorManagementConfig,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -66,6 +70,61 @@ pub struct WatermarkConfig {
     pub position_y_percent: f32,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct OutputSettings {
+    #[serde(default = "default_jpeg_quality")]
+    pub jpeg_quality: u8,
+    #[serde(default = "default_auto_orient")]
+    pub auto_orient: bool,
+}
+
+impl Default for OutputSettings {
+    fn default() -> Self {
+        Self {
+            jpeg_quality: default_jpeg_quality(),
+            auto_orient: default_auto_orient(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ColorManagementConfig {
+    #[serde(default = "default_color_management_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub target_profile: TargetProfileMode,
+    pub target_profile_path: Option<PathBuf>,
+    #[serde(default)]
+    pub rendering_intent: RenderingIntent,
+}
+
+impl Default for ColorManagementConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_color_management_enabled(),
+            target_profile: TargetProfileMode::Srgb,
+            target_profile_path: None,
+            rendering_intent: RenderingIntent::Perceptual,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetProfileMode {
+    #[default]
+    Srgb,
+    Custom,
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderingIntent {
+    #[default]
+    Perceptual,
+    RelativeColorimetric,
+}
+
 fn default_resample_size() -> u32 {
     4000
 }
@@ -86,4 +145,13 @@ fn default_watermark_x() -> f32 {
 }
 fn default_watermark_y() -> f32 {
     95.0
+}
+fn default_jpeg_quality() -> u8 {
+    95
+}
+fn default_auto_orient() -> bool {
+    true
+}
+fn default_color_management_enabled() -> bool {
+    true
 }

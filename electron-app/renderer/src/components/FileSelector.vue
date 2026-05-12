@@ -13,9 +13,27 @@
       />
     </div>
 
+    <div class="form-row">
+      <label>导出目录</label>
+      <button class="btn-secondary path-btn" :disabled="processing" @click="selectOutputDir">
+        选择目录
+      </button>
+      <span class="hint dir-name" :title="store.settings.outputDir">
+        {{ store.settings.outputDir || '未选择' }}
+      </span>
+    </div>
+
     <div class="file-actions">
       <button class="btn-success" :disabled="processing" @click="selectImages">
         选择图片
+      </button>
+      <button
+        v-if="store.selectedFiles.length > 0"
+        class="btn-secondary"
+        :disabled="processing"
+        @click="appendImages"
+      >
+        追加图片
       </button>
       <button
         v-if="store.selectedFiles.length > 0"
@@ -35,27 +53,38 @@
         v-for="(f, i) in store.selectedFiles"
         :key="i"
         class="file-row"
+        :class="{ dragging: draggedIndex === i }"
         :title="f"
+        draggable="true"
+        @dragstart="onDragStart(i)"
+        @dragover.prevent
+        @drop="onDrop(i)"
+        @dragend="onDragEnd"
       >
         <span class="file-index">{{ i + 1 }}</span>
         <span class="file-name">{{ basename(f) }}</span>
-        <button
-          class="remove-btn"
-          :disabled="processing"
-          @click="removeImage(i)"
-        >
-          移除
-        </button>
+        <div class="file-tools">
+          <button class="tool-btn" :disabled="processing || i === 0" @click="moveImage(i, i - 1)">
+            上移
+          </button>
+          <button class="tool-btn" :disabled="processing || i === store.selectedFiles.length - 1" @click="moveImage(i, i + 1)">
+            下移
+          </button>
+          <button class="remove-btn" :disabled="processing" @click="removeImage(i)">
+            移除
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useAppStore } from '../stores/appStore'
 
 const store = useAppStore()
+const draggedIndex = ref<number | null>(null)
 
 const processing = computed(() => store.processing)
 
@@ -73,21 +102,70 @@ async function selectImages() {
   const files = await window.electronAPI.openImages()
   if (!files.length) return
 
+  applySelectedFiles(files, false)
+}
+
+async function appendImages() {
+  const files = await window.electronAPI.openImages()
+  if (!files.length) return
+
+  applySelectedFiles(files, true)
+}
+
+function applySelectedFiles(files: string[], append: boolean) {
+  const current = append ? store.selectedFiles : []
+  const seen = new Set(current)
+  const uniqueNew = files.filter((file) => {
+    if (seen.has(file)) return false
+    seen.add(file)
+    return true
+  })
+  const total = current.length + uniqueNew.length
   const max = store.settings.maxImages
-  if (files.length > max) {
-    alert(`选择的图片数量不能超过 ${max} 张，当前选择了 ${files.length} 张。`)
+  if (total > max) {
+    alert(`选择的图片数量不能超过 ${max} 张，当前将达到 ${total} 张。`)
     return
   }
 
-  store.setSelectedFiles(files)
+  if (append) {
+    store.appendSelectedFiles(files)
+  } else {
+    store.setSelectedFiles(uniqueNew)
+  }
 }
 
 function removeImage(index: number) {
   store.setSelectedFiles(store.selectedFiles.filter((_, i) => i !== index))
 }
 
+function moveImage(from: number, to: number) {
+  store.moveSelectedFile(from, to)
+}
+
 function clearImages() {
   store.setSelectedFiles([])
+}
+
+function onDragStart(index: number) {
+  draggedIndex.value = index
+}
+
+function onDrop(index: number) {
+  if (draggedIndex.value !== null) {
+    store.moveSelectedFile(draggedIndex.value, index)
+  }
+  draggedIndex.value = null
+}
+
+function onDragEnd() {
+  draggedIndex.value = null
+}
+
+async function selectOutputDir() {
+  const dir = await window.electronAPI.openDirectory()
+  if (!dir) return
+  store.settings.outputDir = dir
+  store.saveSettings()
 }
 </script>
 
@@ -131,6 +209,10 @@ function clearImages() {
   color: var(--color-text-secondary);
 }
 
+.file-row.dragging {
+  opacity: 0.55;
+}
+
 .file-index {
   color: var(--color-primary);
   font-weight: 600;
@@ -142,12 +224,39 @@ function clearImages() {
   white-space: nowrap;
 }
 
+.file-tools {
+  display: flex;
+  gap: 4px;
+}
+
+.tool-btn,
 .remove-btn {
   padding: 2px 8px;
   font-size: 12px;
   border-radius: 4px;
+}
+
+.tool-btn {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+.remove-btn {
   background: transparent;
   color: var(--color-danger);
   border: 1px solid var(--color-danger);
+}
+
+.path-btn {
+  width: auto;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.dir-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

@@ -9,6 +9,8 @@ export interface CollageConfig {
   background_color: BackgroundColor
   watermark: WatermarkConfig | null
   overwrite?: boolean
+  output_settings: OutputSettings
+  color_management: ColorManagementConfig
 }
 
 export type BackgroundColor =
@@ -19,6 +21,21 @@ export interface WatermarkConfig {
   scale_percent: number
   position_x_percent: number
   position_y_percent: number
+}
+
+export interface OutputSettings {
+  jpeg_quality: number
+  auto_orient: boolean
+}
+
+export type TargetProfileMode = 'srgb' | 'custom'
+export type RenderingIntent = 'perceptual' | 'relative_colorimetric'
+
+export interface ColorManagementConfig {
+  enabled: boolean
+  target_profile: TargetProfileMode
+  target_profile_path?: string | null
+  rendering_intent: RenderingIntent
 }
 
 export interface FailedImage {

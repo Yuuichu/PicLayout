@@ -11,6 +11,11 @@ path = "src/main.rs"
 # 图像处理
 image = { version = "0.25", features = ["jpeg", "png", "bmp", "tiff"] }
 
+# 色彩管理与元数据
+lcms2 = "6.1"
+kamadak-exif = "0.6"
+flate2 = "1"
+
 # 并行处理
 rayon = "1.10"
 

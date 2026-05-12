@@ -1,9 +1,12 @@
 mod border;
 mod collage;
+mod color;
 mod config;
 mod dpi;
 mod error;
 mod image_proc;
+mod jpeg_output;
+mod metadata;
 mod pipeline;
 mod progress;
 mod watermark;

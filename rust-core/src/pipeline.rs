@@ -8,7 +8,8 @@ use rayon::prelude::*;
 use crate::{
     border::{add_final_border_and_resize, calculate_dynamic_border},
     collage::create_collage,
-    config::CollageConfig,
+    color,
+    config::{CollageConfig, TargetProfileMode},
     error::AppError,
     image_proc::{add_square_border, resample},
     progress::{self, FailedImage, ProgressMessage, Stage},
@@ -26,8 +27,15 @@ pub struct PipelineReport {
     pub warnings: Vec<String>,
 }
 
+struct ProcessedImage {
+    image: DynamicImage,
+    warnings: Vec<String>,
+}
+
 pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     let mut warnings = validate_config(config)?;
+    let target_profile = color::load_target_profile(config)?;
+    let output_icc = target_profile.icc.as_deref();
 
     // 阶段 1：并行处理单图
     progress::send(&ProgressMessage::StageChanged {
@@ -38,18 +46,21 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     let total = config.image_paths.len();
     let counter = Arc::new(AtomicUsize::new(0));
 
-    let results: Vec<Result<DynamicImage, FailedImage>> = config
+    let results: Vec<Result<ProcessedImage, FailedImage>> = config
         .image_paths
         .par_iter()
         .map(|img_path| {
-            let result: Result<DynamicImage, AppError> = (|| {
+            let result: Result<ProcessedImage, AppError> = (|| {
                 let img = image::open(img_path).map_err(AppError::Image)?;
-                let resampled = resample(img, config.resample_size);
-                Ok(add_square_border(
-                    resampled,
-                    config.border_size,
-                    &config.background_color,
-                ))
+                let (prepared, image_warnings) =
+                    color::prepare_image(img_path, img, config, &target_profile)?;
+                let resampled = resample(prepared, config.resample_size);
+                let bordered =
+                    add_square_border(resampled, config.border_size, &config.background_color);
+                Ok(ProcessedImage {
+                    image: bordered,
+                    warnings: image_warnings,
+                })
             })();
 
             let done = counter.fetch_add(1, Ordering::SeqCst) + 1;
@@ -68,7 +79,10 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     let mut failed_count = 0usize;
     for r in results {
         match r {
-            Ok(img) => bordered_images.push(img),
+            Ok(processed) => {
+                bordered_images.push(processed.image);
+                warnings.extend(processed.warnings);
+            }
             Err(failed) => {
                 eprintln!("处理单图失败: {}: {}", failed.path, failed.message);
                 failed_images.push(failed);
@@ -107,7 +121,7 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     let collage_path = config
         .output_dir
         .join(format!("{}_collage.jpg", config.prefix));
-    create_collage(&bordered_images, &collage_path, config)?;
+    create_collage(&bordered_images, &collage_path, config, output_icc)?;
 
     // 阶段 3：添加最终边框
     progress::send(&ProgressMessage::StageChanged {
@@ -118,7 +132,13 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     let final_path = config
         .output_dir
         .join(format!("{}_collage_final.jpg", config.prefix));
-    add_final_border_and_resize(&collage_path, &final_path, config, dynamic_border)?;
+    add_final_border_and_resize(
+        &collage_path,
+        &final_path,
+        config,
+        dynamic_border,
+        output_icc,
+    )?;
 
     let mut outputs = vec![collage_path, final_path.clone()];
 
@@ -132,7 +152,14 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         let wm_path = config
             .output_dir
             .join(format!("{}_collage_final_watermarked.jpg", config.prefix));
-        add_watermark(&final_path, &wm_path, wm_config, config.dpi)?;
+        warnings.extend(add_watermark(
+            &final_path,
+            &wm_path,
+            wm_config,
+            config,
+            &target_profile,
+            output_icc,
+        )?);
         outputs.push(wm_path);
     }
 
@@ -200,6 +227,12 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
     if config.resample_size == 0 || config.border_size == 0 || config.final_size == 0 {
         return Err(AppError::Processing("尺寸参数必须大于 0".into()));
     }
+    if !(1..=100).contains(&config.output_settings.jpeg_quality) {
+        return Err(AppError::Processing(format!(
+            "JPEG 质量必须在 1-100 之间，当前为 {}",
+            config.output_settings.jpeg_quality
+        )));
+    }
     if config.resample_size > config.border_size {
         return Err(AppError::Processing(format!(
             "重采样大小 {} px 不能大于单图边框大小 {} px",
@@ -229,6 +262,22 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
             return Err(AppError::Processing(format!(
                 "水印路径不是文件: {}",
                 watermark.path.display()
+            )));
+        }
+    }
+
+    if config.color_management.enabled
+        && config.color_management.target_profile == TargetProfileMode::Custom
+    {
+        let path = config
+            .color_management
+            .target_profile_path
+            .as_ref()
+            .ok_or_else(|| AppError::Processing("请选择目标 ICC profile 文件".into()))?;
+        if !path.is_file() {
+            return Err(AppError::Processing(format!(
+                "目标 ICC profile 不可访问: {}",
+                path.display()
             )));
         }
     }
@@ -272,7 +321,10 @@ fn expected_output_paths(config: &CollageConfig) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{BackgroundColor, WatermarkConfig};
+    use crate::config::{
+        BackgroundColor, ColorManagementConfig, OutputSettings, RenderingIntent, TargetProfileMode,
+        WatermarkConfig,
+    };
     use image::{DynamicImage, ImageBuffer};
     use std::fs;
     use std::path::Path;
@@ -289,6 +341,13 @@ mod tests {
             background_color: BackgroundColor::White,
             watermark: None,
             overwrite: false,
+            output_settings: OutputSettings::default(),
+            color_management: ColorManagementConfig {
+                enabled: true,
+                target_profile: TargetProfileMode::Srgb,
+                target_profile_path: None,
+                rendering_intent: RenderingIntent::Perceptual,
+            },
         }
     }
 
@@ -341,6 +400,17 @@ mod tests {
         let err = validate_config(&config).unwrap_err().to_string();
 
         assert!(err.contains("最终图像大小"));
+    }
+
+    #[test]
+    fn validate_rejects_invalid_jpeg_quality() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = base_config(dir.path().to_path_buf(), vec![dir.path().join("a.jpg")]);
+        config.output_settings.jpeg_quality = 0;
+
+        let err = validate_config(&config).unwrap_err().to_string();
+
+        assert!(err.contains("JPEG 质量"));
     }
 
     #[test]

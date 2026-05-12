@@ -58,6 +58,62 @@
       <p class="memory-tip">高分辨率参数和大量图片会显著增加内存占用；如处理失败，请降低图片数量或尺寸参数。</p>
     </div>
 
+    <div class="card">
+      <p class="section-title">输出质量</p>
+
+      <div class="form-row">
+        <label>JPEG 质量</label>
+        <input v-model.number="s.jpegQuality" type="number" min="1" max="100" style="max-width:90px" @change="save" />
+        <span class="hint">默认 95</span>
+      </div>
+
+      <div class="form-row">
+        <label>
+          <input type="checkbox" v-model="s.autoOrient" style="margin-right: 6px" @change="save" />
+          EXIF 自动旋正
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="section-title">色彩管理</p>
+
+      <div class="form-row">
+        <label>
+          <input type="checkbox" v-model="s.colorManagementEnabled" style="margin-right: 6px" @change="save" />
+          启用 ICC 转换
+        </label>
+      </div>
+
+      <template v-if="s.colorManagementEnabled">
+        <div class="form-row">
+          <label>目标 Profile</label>
+          <select v-model="s.targetProfileMode" style="max-width:120px" @change="save">
+            <option value="srgb">sRGB</option>
+            <option value="custom">自定义 ICC</option>
+          </select>
+          <button
+            v-if="s.targetProfileMode === 'custom'"
+            class="btn-secondary icc-btn"
+            @click="selectIccProfile"
+          >
+            选择 ICC
+          </button>
+          <span v-if="s.targetProfileMode === 'custom'" class="hint icc-name" :title="s.targetProfilePath">
+            {{ iccBasename || '未选择' }}
+          </span>
+        </div>
+
+        <div class="form-row">
+          <label>渲染意图</label>
+          <select v-model="s.renderingIntent" style="max-width:170px" @change="save">
+            <option value="perceptual">Perceptual</option>
+            <option value="relative_colorimetric">Relative Colorimetric</option>
+          </select>
+        </div>
+      </template>
+    </div>
+
   </div>
 </template>
 
@@ -74,6 +130,11 @@ const currentColorLabel = computed(
   () => colorOptions.find((o) => o.value === s.backgroundColor)?.label ?? ''
 )
 
+const iccBasename = computed(() => {
+  if (!s.targetProfilePath) return ''
+  return s.targetProfilePath.replace(/\\/g, '/').split('/').pop() ?? s.targetProfilePath
+})
+
 function selectColor(val: BackgroundColor) {
   s.backgroundColor = val
   save()
@@ -81,6 +142,13 @@ function selectColor(val: BackgroundColor) {
 
 function save() {
   store.saveSettings()
+}
+
+async function selectIccProfile() {
+  const path = await window.electronAPI.openIccProfile()
+  if (!path) return
+  s.targetProfilePath = path
+  save()
 }
 </script>
 
@@ -118,5 +186,16 @@ function save() {
   font-size: 11px;
   color: var(--color-text-secondary);
   line-height: 1.5;
+}
+
+.icc-btn {
+  width: auto;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.icc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

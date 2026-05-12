@@ -2,18 +2,26 @@ use std::path::Path;
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView, Rgba};
 
-use crate::{config::WatermarkConfig, dpi::inject_dpi, error::AppError};
+use crate::{
+    color::{self, TargetColorProfile},
+    config::{CollageConfig, WatermarkConfig},
+    error::AppError,
+    jpeg_output::save_user_jpeg,
+};
 
 pub fn add_watermark(
     input: &Path,
     output: &Path,
     wm_config: &WatermarkConfig,
-    dpi: u32,
-) -> Result<(), AppError> {
+    config: &CollageConfig,
+    target_profile: &TargetColorProfile,
+    icc_profile: Option<&[u8]>,
+) -> Result<Vec<String>, AppError> {
     let base = image::open(input)?;
     let (img_w, img_h) = base.dimensions();
 
     let wm_raw = image::open(&wm_config.path)?;
+    let (wm_raw, warnings) = color::prepare_image(&wm_config.path, wm_raw, config, target_profile)?;
 
     // 缩放水印
     let scale = wm_config.scale_percent / 100.0;
@@ -45,9 +53,13 @@ pub fn add_watermark(
         canvas.put_pixel(tx, ty, blended);
     }
 
-    DynamicImage::ImageRgba8(canvas).save(output)?;
-    inject_dpi(output, dpi as u16)?;
-    Ok(())
+    save_user_jpeg(
+        &DynamicImage::ImageRgba8(canvas),
+        output,
+        config,
+        icc_profile,
+    )?;
+    Ok(warnings)
 }
 
 /// Alpha 合成（Porter-Duff "over" 操作）
