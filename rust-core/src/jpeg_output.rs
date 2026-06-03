@@ -2,6 +2,7 @@ use std::fs::File;
 use std::path::Path;
 
 use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageEncoder};
+use image::{GenericImageView, PixelWithColorType};
 
 use crate::{config::CollageConfig, dpi::inject_dpi, error::AppError};
 
@@ -11,6 +12,19 @@ pub fn save_user_jpeg(
     config: &CollageConfig,
     icc_profile: Option<&[u8]>,
 ) -> Result<(), AppError> {
+    save_user_jpeg_view(img, output, config, icc_profile)
+}
+
+pub fn save_user_jpeg_view<I>(
+    img: &I,
+    output: &Path,
+    config: &CollageConfig,
+    icc_profile: Option<&[u8]>,
+) -> Result<(), AppError>
+where
+    I: GenericImageView,
+    I::Pixel: PixelWithColorType,
+{
     let file = File::create(output)?;
     let mut encoder = JpegEncoder::new_with_quality(file, config.output_settings.jpeg_quality);
     if let Some(icc) = icc_profile {
@@ -19,8 +33,7 @@ pub fn save_user_jpeg(
             .map_err(|e| AppError::Processing(format!("写入 ICC profile 失败: {}", e)))?;
     }
 
-    let rgb = img.to_rgb8();
-    encoder.encode_image(&rgb)?;
+    encoder.encode_image(img)?;
     inject_dpi(output, config.dpi as u16)?;
     Ok(())
 }

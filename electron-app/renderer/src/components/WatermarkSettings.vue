@@ -1,59 +1,94 @@
 <template>
-  <div class="card">
-    <p class="section-title">水印设置</p>
-
-    <div class="form-row">
-      <label>
+  <div class="watermark-settings" :class="{ card: !embedded, embedded }">
+    <div class="watermark-header">
+      <p class="section-title">水印设置</p>
+      <label class="toggle-label">
         <input
-          type="checkbox"
           v-model="s.watermarkEnabled"
+          type="checkbox"
           @change="save"
-          style="margin-right: 6px"
         />
         启用水印
       </label>
     </div>
 
     <template v-if="s.watermarkEnabled">
-      <div class="form-row">
-        <label>水印图片</label>
-        <button class="btn-secondary" style="padding: 4px 10px; font-size:12px" @click="selectWatermark">
-          选择图片
-        </button>
-        <span class="hint file-name">{{ watermarkBasename || '未选择' }}</span>
+      <div class="watermark-grid">
+        <div class="form-row compact-row">
+          <label>水印图片</label>
+          <button class="btn-secondary watermark-btn" :disabled="store.processing" @click="selectWatermark">
+            选择图片
+          </button>
+          <span class="hint file-name" :title="s.watermark.path">
+            {{ watermarkBasename || '未选择' }}
+          </span>
+        </div>
+
+        <div class="form-row compact-row">
+          <label>缩放</label>
+          <input
+            v-model.number="s.watermark.scale_percent"
+            class="range-input"
+            type="range"
+            min="10"
+            max="300"
+            @input="save"
+          />
+          <input
+            v-model.number="s.watermark.scale_percent"
+            type="number"
+            min="10"
+            max="300"
+            class="number-input"
+            @change="save"
+          />
+          <span class="hint">%</span>
+        </div>
+
+        <div class="form-row compact-row">
+          <label>水平位置</label>
+          <input
+            v-model.number="s.watermark.position_x_percent"
+            class="range-input"
+            type="range"
+            min="0"
+            max="100"
+            @input="save"
+          />
+          <input
+            v-model.number="s.watermark.position_x_percent"
+            type="number"
+            min="0"
+            max="100"
+            class="number-input"
+            @change="save"
+          />
+          <span class="hint">%</span>
+        </div>
+
+        <div class="form-row compact-row">
+          <label>垂直位置</label>
+          <input
+            v-model.number="s.watermark.position_y_percent"
+            class="range-input"
+            type="range"
+            min="0"
+            max="100"
+            @input="save"
+          />
+          <input
+            v-model.number="s.watermark.position_y_percent"
+            type="number"
+            min="0"
+            max="100"
+            class="number-input"
+            @change="save"
+          />
+          <span class="hint">%</span>
+        </div>
       </div>
 
-      <div class="form-row">
-        <label>缩放比例</label>
-        <input
-          v-model.number="s.watermark.scale_percent"
-          type="number" min="10" max="300" style="max-width:80px"
-          @change="save"
-        />
-        <span class="hint">%</span>
-      </div>
-
-      <div class="form-row">
-        <label>水平位置</label>
-        <input
-          v-model.number="s.watermark.position_x_percent"
-          type="number" min="0" max="100" style="max-width:80px"
-          @change="save"
-        />
-        <span class="hint">%（50% = 居中）</span>
-      </div>
-
-      <div class="form-row">
-        <label>垂直位置</label>
-        <input
-          v-model.number="s.watermark.position_y_percent"
-          type="number" min="0" max="100" style="max-width:80px"
-          @change="save"
-        />
-        <span class="hint">%（95% = 底部）</span>
-      </div>
-
-      <p class="tip">建议使用 PNG 格式图片以获得最佳透明效果</p>
+      <p class="tip">水印会叠加在下方拼贴预览上；导出时会使用原始水印图片，建议使用带透明通道的 PNG。</p>
     </template>
   </div>
 </template>
@@ -61,6 +96,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
+
+defineProps<{
+  embedded?: boolean
+}>()
 
 const store = useAppStore()
 const s = store.settings
@@ -74,6 +113,8 @@ async function selectWatermark() {
   const path = await window.electronAPI.openWatermark()
   if (path) {
     s.watermark.path = path
+    await store.ensureThumbnail(path)
+    await store.ensureImageSize(path)
     save()
   }
 }
@@ -84,6 +125,56 @@ function save() {
 </script>
 
 <style scoped>
+.watermark-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.watermark-settings.embedded {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+}
+
+.watermark-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.watermark-header .section-title {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.watermark-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+
+.compact-row {
+  margin: 0;
+}
+
+.watermark-btn {
+  width: auto;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .file-name {
   max-width: 180px;
   overflow: hidden;
@@ -91,9 +182,29 @@ function save() {
   white-space: nowrap;
 }
 
+.range-input {
+  width: 140px;
+}
+
+.number-input {
+  max-width: 64px;
+}
+
 .tip {
   font-size: 11px;
   color: var(--color-text-secondary);
-  margin-top: 4px;
+  margin-top: 0;
+}
+
+@media (max-width: 760px) {
+  .watermark-header,
+  .watermark-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .watermark-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

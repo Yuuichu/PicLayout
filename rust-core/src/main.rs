@@ -4,6 +4,7 @@ mod color;
 mod config;
 mod dpi;
 mod error;
+mod image_loader;
 mod image_proc;
 mod jpeg_output;
 mod metadata;

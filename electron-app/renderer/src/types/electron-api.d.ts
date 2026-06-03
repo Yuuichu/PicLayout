@@ -6,6 +6,8 @@ export type ElectronAPI = {
   openIccProfile: () => Promise<string | null>
   openDirectory: () => Promise<string | null>
   openPath: (path: string) => Promise<string>
+  getThumbnail: (path: string) => Promise<string | null>
+  getImageSize: (path: string) => Promise<{ width: number; height: number } | null>
   startCollage: (config: CollageConfig) => Promise<CollageResult>
   cancelCollage: () => Promise<void>
   onProgress: (callback: (msg: ProgressMessage) => void) => () => void

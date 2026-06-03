@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { rustBridge, CollageConfig, ProgressMessage } from './rust-bridge'
 
 export function registerIpcHandlers(win: BrowserWindow): void {
@@ -44,6 +44,29 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // 打开系统路径
   ipcMain.handle('shell:openPath', async (_event, path: string) => {
     return shell.openPath(path)
+  })
+
+  // 读取缩略图
+  ipcMain.handle('image:thumbnail', async (_event, path: string) => {
+    const img = nativeImage.createFromPath(path)
+    if (img.isEmpty()) return null
+
+    const { width, height } = img.getSize()
+    if (width <= 0 || height <= 0) return null
+
+    const resizeOptions =
+      width >= height
+        ? { width: 240, quality: 'good' as const }
+        : { height: 240, quality: 'good' as const }
+
+    return img.resize(resizeOptions).toDataURL()
+  })
+
+  // 读取图片尺寸，用于缩略图和水印预览
+  ipcMain.handle('image:size', async (_event, path: string) => {
+    const img = nativeImage.createFromPath(path)
+    if (img.isEmpty()) return null
+    return img.getSize()
   })
 
   // 启动拼贴处理

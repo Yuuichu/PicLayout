@@ -24,6 +24,7 @@
         </li>
       </ul>
       <button class="btn-secondary open-dir-btn" @click="openOutputDir">打开输出目录</button>
+      <p v-if="store.errorMessage" class="open-dir-error">{{ store.errorMessage }}</p>
       <div v-if="store.warnings.length" class="warning-list">
         <p v-for="warning in store.warnings" :key="warning">{{ warning }}</p>
       </div>
@@ -74,7 +75,9 @@ async function openOutputDir() {
   const error = await window.electronAPI.openPath(store.settings.outputDir)
   if (error) {
     store.errorMessage = error
+    return
   }
+  store.errorMessage = ''
 }
 </script>
 
@@ -149,6 +152,12 @@ async function openOutputDir() {
   margin-top: 8px;
   padding: 5px 12px;
   font-size: 12px;
+}
+
+.open-dir-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-danger);
 }
 
 .warning-list,

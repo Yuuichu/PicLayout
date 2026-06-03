@@ -6,6 +6,7 @@ use crate::{
     color::{self, TargetColorProfile},
     config::{CollageConfig, WatermarkConfig},
     error::AppError,
+    image_loader::open_image,
     jpeg_output::save_user_jpeg,
 };
 
@@ -17,10 +18,10 @@ pub fn add_watermark(
     target_profile: &TargetColorProfile,
     icc_profile: Option<&[u8]>,
 ) -> Result<Vec<String>, AppError> {
-    let base = image::open(input)?;
+    let base = open_image(input)?;
     let (img_w, img_h) = base.dimensions();
 
-    let wm_raw = image::open(&wm_config.path)?;
+    let wm_raw = open_image(&wm_config.path)?;
     let (wm_raw, warnings) = color::prepare_image(&wm_config.path, wm_raw, config, target_profile)?;
 
     // 缩放水印

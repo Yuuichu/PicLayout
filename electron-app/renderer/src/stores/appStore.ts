@@ -11,6 +11,11 @@ import type {
 // 用户设置（持久化到 localStorage）
 const SETTINGS_KEY = 'piclayout_settings'
 
+interface ImageSize {
+  width: number
+  height: number
+}
+
 interface Settings {
   maxImages: number
   resampleSize: number
@@ -74,9 +79,12 @@ export const useAppStore = defineStore('app', () => {
 
   // 已选图片
   const selectedFiles = ref<string[]>([])
+  const thumbnails = reactive<Record<string, string | null>>({})
+  const imageSizes = reactive<Record<string, ImageSize | null>>({})
 
   function setSelectedFiles(files: string[]) {
     selectedFiles.value = files
+    pruneThumbnails()
   }
 
   function appendSelectedFiles(files: string[]) {
@@ -89,6 +97,7 @@ export const useAppStore = defineStore('app', () => {
       }
     }
     selectedFiles.value = merged
+    pruneThumbnails()
   }
 
   function moveSelectedFile(from: number, to: number) {
@@ -99,6 +108,50 @@ export const useAppStore = defineStore('app', () => {
     const [item] = next.splice(from, 1)
     next.splice(to, 0, item)
     selectedFiles.value = next
+  }
+
+  function swapSelectedFiles(first: number, second: number) {
+    if (
+      first === second ||
+      first < 0 ||
+      second < 0 ||
+      first >= selectedFiles.value.length ||
+      second >= selectedFiles.value.length
+    ) {
+      return
+    }
+    const next = [...selectedFiles.value]
+    ;[next[first], next[second]] = [next[second], next[first]]
+    selectedFiles.value = next
+  }
+
+  async function ensureThumbnail(path: string) {
+    if (path in thumbnails) return
+    thumbnails[path] = null
+    thumbnails[path] = await window.electronAPI.getThumbnail(path)
+  }
+
+  async function ensureImageSize(path: string) {
+    if (path in imageSizes) return
+    imageSizes[path] = null
+    imageSizes[path] = await window.electronAPI.getImageSize(path)
+  }
+
+  function pruneThumbnails() {
+    const selected = new Set(selectedFiles.value)
+    if (settings.watermark.path) {
+      selected.add(settings.watermark.path)
+    }
+    for (const path of Object.keys(thumbnails)) {
+      if (!selected.has(path)) {
+        delete thumbnails[path]
+      }
+    }
+    for (const path of Object.keys(imageSizes)) {
+      if (!selected.has(path)) {
+        delete imageSizes[path]
+      }
+    }
   }
 
   // 处理状态
@@ -134,9 +187,14 @@ export const useAppStore = defineStore('app', () => {
     settings,
     saveSettings,
     selectedFiles,
+    thumbnails,
+    imageSizes,
     setSelectedFiles,
     appendSelectedFiles,
     moveSelectedFile,
+    swapSelectedFiles,
+    ensureThumbnail,
+    ensureImageSize,
     processing,
     progress,
     statusMessage,

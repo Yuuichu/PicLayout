@@ -19,6 +19,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openPath: (path: string): Promise<string> =>
     ipcRenderer.invoke('shell:openPath', path),
 
+  getThumbnail: (path: string): Promise<string | null> =>
+    ipcRenderer.invoke('image:thumbnail', path),
+
+  getImageSize: (path: string): Promise<{ width: number; height: number } | null> =>
+    ipcRenderer.invoke('image:size', path),
+
   // 拼贴处理
   startCollage: (config: CollageConfig): Promise<CollageResult> =>
     ipcRenderer.invoke('collage:start', config),
@@ -41,6 +47,8 @@ export type ElectronAPI = {
   openIccProfile: () => Promise<string | null>
   openDirectory: () => Promise<string | null>
   openPath: (path: string) => Promise<string>
+  getThumbnail: (path: string) => Promise<string | null>
+  getImageSize: (path: string) => Promise<{ width: number; height: number } | null>
   startCollage: (config: CollageConfig) => Promise<CollageResult>
   cancelCollage: () => Promise<void>
   onProgress: (callback: (msg: ProgressMessage) => void) => () => void

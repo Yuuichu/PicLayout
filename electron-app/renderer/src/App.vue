@@ -40,7 +40,6 @@
     <!-- 设置页 -->
     <div v-show="activeTab === 'settings'" class="tab-content">
       <SettingsPanel />
-      <WatermarkSettings />
     </div>
 
     <!-- 底部版权 -->
@@ -54,7 +53,6 @@ import { useAppStore } from './stores/appStore'
 import type { CollageConfig, CollageResult, ProgressMessage } from './types/protocol'
 import FileSelector from './components/FileSelector.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
-import WatermarkSettings from './components/WatermarkSettings.vue'
 import ProgressBar from './components/ProgressBar.vue'
 
 const store = useAppStore()
@@ -162,10 +160,17 @@ async function startCollage() {
     }
   } catch (err: unknown) {
     if (!store.outputFiles.length && !store.cancelledMessage) {
-      store.errorMessage = err instanceof Error ? err.message : String(err)
+      store.errorMessage = formatCollageError(err)
       store.processing = false
     }
   }
+}
+
+function formatCollageError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  return raw
+    .replace(/^Error invoking remote method 'collage:start': Error: /, '')
+    .replace(/^Error invoking remote method 'collage:start': /, '')
 }
 </script>
 

@@ -1,93 +1,46 @@
-use std::path::Path;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
-use image::{imageops, DynamicImage, ImageBuffer, Rgba};
+use image::{GenericImageView, Rgba, RgbaImage};
 
-use crate::{config::CollageConfig, error::AppError, jpeg_output::save_user_jpeg, progress};
+use crate::{
+    config::CollageConfig, error::AppError, image_loader::open_image,
+    jpeg_output::save_user_jpeg_view,
+    progress,
+};
 
-const CHUNK_SIZE: u32 = 2; // 每次处理的行数，控制内存占用
+const MAX_JPEG_DIMENSION: u32 = u16::MAX as u32;
 
-/// 直接接受内存中的 DynamicImage，避免临时文件的 JPEG 编解码开销
 pub fn create_collage(
-    images: &[DynamicImage],
+    images: &[PathBuf],
     output_path: &Path,
     config: &CollageConfig,
     icc_profile: Option<&[u8]>,
 ) -> Result<(), AppError> {
+    if images.is_empty() {
+        return Err(AppError::NoImagesProcessed);
+    }
+
     let num = images.len() as u32;
     let grid_cols = (num as f64).sqrt().ceil() as u32;
     let grid_rows = (num as f64 / grid_cols as f64).ceil() as u32;
     let bs = config.border_size;
-    let total_width = grid_cols * bs;
-    let total_height = grid_rows * bs;
-
-    let [r, g, b] = config.background_color.to_rgb();
-    let bg_pixel = Rgba([r, g, b, 255]);
-
-    // 多 chunk 时需要临时文件合并，单 chunk 直接输出
-    let temp_dir = tempfile::tempdir()?;
-    let mut chunk_paths: Vec<std::path::PathBuf> = Vec::new();
-
-    for start_row in (0..grid_rows).step_by(CHUNK_SIZE as usize) {
-        let end_row = (start_row + CHUNK_SIZE).min(grid_rows);
-        let chunk_h = (end_row - start_row) * bs;
-
-        let mut chunk: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::from_pixel(total_width, chunk_h, bg_pixel);
-
-        for row_offset in 0..(end_row - start_row) {
-            let row = start_row + row_offset;
-            for col in 0..grid_cols {
-                let idx = (row * grid_cols + col) as usize;
-                if idx >= images.len() {
-                    continue;
-                }
-                let x_off = col * bs;
-                let y_off = row_offset * bs;
-                imageops::overlay(
-                    &mut chunk,
-                    &images[idx].to_rgba8(),
-                    x_off as i64,
-                    y_off as i64,
-                );
-            }
-        }
-
-        if grid_rows <= CHUNK_SIZE {
-            // 只有一个 chunk，直接保存为最终输出
-            save_user_jpeg(
-                &DynamicImage::ImageRgba8(chunk),
-                output_path,
-                config,
-                icc_profile,
-            )?;
-            progress::send(&progress::ProgressMessage::StageChanged {
-                stage: progress::Stage::CreatingCollage,
-                message: format!("拼贴图已创建（{}×{} 网格）", grid_cols, grid_rows),
-            });
-            return Ok(());
-        }
-
-        let chunk_path = temp_dir.path().join(format!("chunk_{}.png", start_row));
-        DynamicImage::ImageRgba8(chunk).save(&chunk_path)?;
-        chunk_paths.push(chunk_path);
+    let total_width = grid_cols.checked_mul(bs).ok_or_else(|| {
+        AppError::Processing("拼贴图尺寸过大，宽度计算溢出".into())
+    })?;
+    let total_height = grid_rows.checked_mul(bs).ok_or_else(|| {
+        AppError::Processing("拼贴图尺寸过大，高度计算溢出".into())
+    })?;
+    if total_width > MAX_JPEG_DIMENSION || total_height > MAX_JPEG_DIMENSION {
+        return Err(AppError::Processing(format!(
+            "拼贴图尺寸 {}×{} px 超过 JPEG 支持上限 {} px",
+            total_width, total_height, MAX_JPEG_DIMENSION
+        )));
     }
 
-    // 多 chunk 合并
-    let mut final_canvas: ImageBuffer<Rgba<u8>, Vec<u8>> =
-        ImageBuffer::from_pixel(total_width, total_height, bg_pixel);
-    let mut y_off = 0i64;
-    for chunk_path in &chunk_paths {
-        let chunk_img = image::open(chunk_path)?.to_rgba8();
-        let ch = chunk_img.height() as i64;
-        imageops::overlay(&mut final_canvas, &chunk_img, 0, y_off);
-        y_off += ch;
-    }
-    save_user_jpeg(
-        &DynamicImage::ImageRgba8(final_canvas),
-        output_path,
-        config,
-        icc_profile,
-    )?;
+    let view = CollageView::new(images, grid_cols, grid_rows, bs, &config.background_color)?;
+    save_user_jpeg_view(&view, output_path, config, icc_profile)?;
 
     progress::send(&progress::ProgressMessage::StageChanged {
         stage: progress::Stage::CreatingCollage,
@@ -95,4 +48,120 @@ pub fn create_collage(
     });
 
     Ok(())
+}
+
+struct CachedRow {
+    row: u32,
+    tiles: HashMap<usize, RgbaImage>,
+}
+
+struct CollageView<'a> {
+    image_paths: &'a [PathBuf],
+    grid_cols: u32,
+    border_size: u32,
+    width: u32,
+    height: u32,
+    bg_pixel: Rgba<u8>,
+    cache: RefCell<CachedRow>,
+}
+
+impl<'a> CollageView<'a> {
+    fn new(
+        image_paths: &'a [PathBuf],
+        grid_cols: u32,
+        grid_rows: u32,
+        border_size: u32,
+        bg: &crate::config::BackgroundColor,
+    ) -> Result<Self, AppError> {
+        for path in image_paths {
+            let img = open_image(path)?;
+            if img.width() != border_size || img.height() != border_size {
+                return Err(AppError::Processing(format!(
+                    "临时拼贴图块尺寸不匹配: {}",
+                    path.display()
+                )));
+            }
+        }
+
+        let [r, g, b] = bg.to_rgb();
+        Ok(Self {
+            image_paths,
+            grid_cols,
+            border_size,
+            width: grid_cols * border_size,
+            height: grid_rows * border_size,
+            bg_pixel: Rgba([r, g, b, 255]),
+            cache: RefCell::new(CachedRow {
+                row: u32::MAX,
+                tiles: HashMap::new(),
+            }),
+        })
+    }
+
+    fn load_tile_pixel(&self, index: usize, row: u32, x: u32, y: u32) -> Rgba<u8> {
+        let mut cache = self.cache.borrow_mut();
+        if cache.row != row {
+            cache.row = row;
+            cache.tiles.clear();
+        }
+        cache.tiles.entry(index).or_insert_with(|| {
+            open_image(&self.image_paths[index])
+                .expect("processed collage tile should remain readable")
+                .to_rgba8()
+        });
+
+        *cache
+            .tiles
+            .get(&index)
+            .expect("collage tile cache should be populated")
+            .get_pixel(x, y)
+    }
+}
+
+impl GenericImageView for CollageView<'_> {
+    type Pixel = Rgba<u8>;
+
+    fn dimensions(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
+        let col = x / self.border_size;
+        let row = y / self.border_size;
+        let index = (row * self.grid_cols + col) as usize;
+        if index >= self.image_paths.len() {
+            return self.bg_pixel;
+        }
+
+        self.load_tile_pixel(index, row, x % self.border_size, y % self.border_size)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::BackgroundColor;
+    use std::fs;
+
+    fn save_tile(path: &Path, size: u32, color: [u8; 4]) {
+        let img = RgbaImage::from_pixel(size, size, Rgba(color));
+        img.save(path).unwrap();
+    }
+
+    #[test]
+    fn collage_view_keeps_loaded_tiles_available_after_switching_tiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.png");
+        let second = dir.path().join("second.png");
+        save_tile(&first, 4, [10, 20, 30, 255]);
+        save_tile(&second, 4, [40, 50, 60, 255]);
+        let paths = vec![first.clone(), second];
+        let view = CollageView::new(&paths, 2, 1, 4, &BackgroundColor::White).unwrap();
+
+        assert_eq!(view.get_pixel(0, 0).0, [10, 20, 30, 255]);
+        assert_eq!(view.get_pixel(4, 0).0, [40, 50, 60, 255]);
+        fs::remove_file(first).unwrap();
+
+        assert_eq!(view.get_pixel(0, 0).0, [10, 20, 30, 255]);
+    }
 }

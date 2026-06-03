@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use image::DynamicImage;
 use rayon::prelude::*;
 
 use crate::{
@@ -11,6 +10,7 @@ use crate::{
     color,
     config::{CollageConfig, TargetProfileMode},
     error::AppError,
+    image_loader::open_image,
     image_proc::{add_square_border, resample},
     progress::{self, FailedImage, ProgressMessage, Stage},
     watermark::add_watermark,
@@ -18,6 +18,9 @@ use crate::{
 
 const RECOMMENDED_MAX_IMAGES: usize = 30;
 const HARD_MAX_IMAGES: usize = 500;
+const MAX_JPEG_DIMENSION: u32 = u16::MAX as u32;
+const MIN_WATERMARK_SCALE_PERCENT: f32 = 10.0;
+const MAX_WATERMARK_SCALE_PERCENT: f32 = 300.0;
 
 #[derive(Debug)]
 pub struct PipelineReport {
@@ -28,7 +31,7 @@ pub struct PipelineReport {
 }
 
 struct ProcessedImage {
-    image: DynamicImage,
+    path: PathBuf,
     warnings: Vec<String>,
 }
 
@@ -45,20 +48,26 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
 
     let total = config.image_paths.len();
     let counter = Arc::new(AtomicUsize::new(0));
+    let processed_dir = tempfile::tempdir()?;
 
     let results: Vec<Result<ProcessedImage, FailedImage>> = config
         .image_paths
         .par_iter()
-        .map(|img_path| {
+        .enumerate()
+        .map(|(index, img_path)| {
             let result: Result<ProcessedImage, AppError> = (|| {
-                let img = image::open(img_path).map_err(AppError::Image)?;
+                let img = open_image(img_path)?;
                 let (prepared, image_warnings) =
                     color::prepare_image(img_path, img, config, &target_profile)?;
                 let resampled = resample(prepared, config.resample_size);
                 let bordered =
                     add_square_border(resampled, config.border_size, &config.background_color);
+                let temp_path = processed_dir
+                    .path()
+                    .join(format!("processed_{:04}.png", index));
+                bordered.save(&temp_path)?;
                 Ok(ProcessedImage {
-                    image: bordered,
+                    path: temp_path,
                     warnings: image_warnings,
                 })
             })();
@@ -74,13 +83,13 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         .collect();
 
     // 分离成功/失败
-    let mut bordered_images: Vec<DynamicImage> = Vec::new();
+    let mut bordered_images: Vec<PathBuf> = Vec::new();
     let mut failed_images: Vec<FailedImage> = Vec::new();
     let mut failed_count = 0usize;
     for r in results {
         match r {
             Ok(processed) => {
-                bordered_images.push(processed.image);
+                bordered_images.push(processed.path);
                 warnings.extend(processed.warnings);
             }
             Err(failed) => {
@@ -227,6 +236,19 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
     if config.resample_size == 0 || config.border_size == 0 || config.final_size == 0 {
         return Err(AppError::Processing("尺寸参数必须大于 0".into()));
     }
+    if config.final_size > MAX_JPEG_DIMENSION {
+        return Err(AppError::Processing(format!(
+            "最终图像大小 {} px 超过 JPEG 支持上限 {} px",
+            config.final_size, MAX_JPEG_DIMENSION
+        )));
+    }
+    if config.dpi == 0 || config.dpi > u16::MAX as u32 {
+        return Err(AppError::Processing(format!(
+            "DPI 必须在 1-{} 之间，当前为 {}",
+            u16::MAX,
+            config.dpi
+        )));
+    }
     if !(1..=100).contains(&config.output_settings.jpeg_quality) {
         return Err(AppError::Processing(format!(
             "JPEG 质量必须在 1-100 之间，当前为 {}",
@@ -241,6 +263,20 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
     }
 
     let planned_cols = (config.image_paths.len() as f64).sqrt().ceil() as u32;
+    let planned_rows = (config.image_paths.len() as f64 / planned_cols as f64).ceil() as u32;
+    let collage_width = planned_cols.checked_mul(config.border_size).ok_or_else(|| {
+        AppError::Processing("拼贴图尺寸过大，宽度计算溢出".into())
+    })?;
+    let collage_height = planned_rows.checked_mul(config.border_size).ok_or_else(|| {
+        AppError::Processing("拼贴图尺寸过大，高度计算溢出".into())
+    })?;
+    if collage_width > MAX_JPEG_DIMENSION || collage_height > MAX_JPEG_DIMENSION {
+        return Err(AppError::Processing(format!(
+            "拼贴图尺寸 {}×{} px 超过 JPEG 支持上限 {} px",
+            collage_width, collage_height, MAX_JPEG_DIMENSION
+        )));
+    }
+
     let dynamic_border = calculate_dynamic_border(planned_cols);
     if config.final_size <= dynamic_border * 2 {
         return Err(AppError::Processing(format!(
@@ -263,6 +299,23 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
                 "水印路径不是文件: {}",
                 watermark.path.display()
             )));
+        }
+        if !(MIN_WATERMARK_SCALE_PERCENT..=MAX_WATERMARK_SCALE_PERCENT)
+            .contains(&watermark.scale_percent)
+        {
+            return Err(AppError::Processing(format!(
+                "水印缩放比例必须在 {}-{}% 之间",
+                MIN_WATERMARK_SCALE_PERCENT, MAX_WATERMARK_SCALE_PERCENT
+            )));
+        }
+        if !watermark.position_x_percent.is_finite()
+            || !watermark.position_y_percent.is_finite()
+            || !(0.0..=100.0).contains(&watermark.position_x_percent)
+            || !(0.0..=100.0).contains(&watermark.position_y_percent)
+        {
+            return Err(AppError::Processing(
+                "水印位置必须在 0-100% 之间".into(),
+            ));
         }
     }
 
@@ -414,6 +467,28 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_final_size_that_exceeds_jpeg_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = base_config(dir.path().to_path_buf(), vec![dir.path().join("a.jpg")]);
+        config.final_size = u16::MAX as u32 + 1;
+
+        let err = validate_config(&config).unwrap_err().to_string();
+
+        assert!(err.contains("最终图像大小"));
+    }
+
+    #[test]
+    fn validate_rejects_dpi_that_cannot_be_written_to_jfif() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = base_config(dir.path().to_path_buf(), vec![dir.path().join("a.jpg")]);
+        config.dpi = u16::MAX as u32 + 1;
+
+        let err = validate_config(&config).unwrap_err().to_string();
+
+        assert!(err.contains("DPI"));
+    }
+
+    #[test]
     fn validate_rejects_missing_watermark_path() {
         let dir = tempfile::tempdir().unwrap();
         let mut config = base_config(dir.path().to_path_buf(), vec![dir.path().join("a.jpg")]);
@@ -427,6 +502,57 @@ mod tests {
         let err = validate_config(&config).unwrap_err().to_string();
 
         assert!(err.contains("水印图片不可访问"));
+    }
+
+    #[test]
+    fn validate_rejects_watermark_scale_outside_ui_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let watermark = dir.path().join("watermark.png");
+        save_test_image(&watermark, 4, 4);
+        let mut config = base_config(dir.path().to_path_buf(), vec![dir.path().join("a.jpg")]);
+        config.watermark = Some(WatermarkConfig {
+            path: watermark,
+            scale_percent: 1000.0,
+            position_x_percent: 50.0,
+            position_y_percent: 50.0,
+        });
+
+        let err = validate_config(&config).unwrap_err().to_string();
+
+        assert!(err.contains("水印缩放比例"));
+    }
+
+    #[test]
+    fn validate_rejects_watermark_position_outside_canvas_percent_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let watermark = dir.path().join("watermark.png");
+        save_test_image(&watermark, 4, 4);
+        let mut config = base_config(dir.path().to_path_buf(), vec![dir.path().join("a.jpg")]);
+        config.watermark = Some(WatermarkConfig {
+            path: watermark,
+            scale_percent: 100.0,
+            position_x_percent: -1.0,
+            position_y_percent: 50.0,
+        });
+
+        let err = validate_config(&config).unwrap_err().to_string();
+
+        assert!(err.contains("水印位置"));
+    }
+
+    #[test]
+    fn validate_rejects_collage_dimensions_that_exceed_jpeg_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let image_paths = (0..16)
+            .map(|i| dir.path().join(format!("image_{}.jpg", i)))
+            .collect();
+        let mut config = base_config(dir.path().to_path_buf(), image_paths);
+        config.border_size = 20_000;
+        config.resample_size = 20_000;
+
+        let err = validate_config(&config).unwrap_err().to_string();
+
+        assert!(err.contains("拼贴图尺寸"));
     }
 
     #[test]

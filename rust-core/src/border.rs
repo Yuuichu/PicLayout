@@ -2,7 +2,9 @@ use std::path::Path;
 
 use image::{imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgba};
 
-use crate::{config::CollageConfig, error::AppError, jpeg_output::save_user_jpeg};
+use crate::{
+    config::CollageConfig, error::AppError, image_loader::open_image, jpeg_output::save_user_jpeg,
+};
 
 /// 根据列数动态计算外边框大小（与 Python 原版算法完全一致）
 pub fn calculate_dynamic_border(grid_cols: u32) -> u32 {
@@ -24,7 +26,7 @@ pub fn add_final_border_and_resize(
     border_px: u32,
     icc_profile: Option<&[u8]>,
 ) -> Result<(), AppError> {
-    let img = image::open(input)?;
+    let img = open_image(input)?;
     let (w, h) = (img.width(), img.height());
 
     // 计算缩放比例：加边框后长边 = final_size（防止 border_px 过大时下溢）
