@@ -1,5 +1,6 @@
 export interface CollageConfig {
   image_paths: string[]
+  image_rotations: Record<string, ImageRotationDegrees>
   output_dir: string
   prefix: string
   resample_size: number
@@ -12,6 +13,8 @@ export interface CollageConfig {
   output_settings: OutputSettings
   color_management: ColorManagementConfig
 }
+
+export type ImageRotationDegrees = 0 | 90 | 180 | 270
 
 export type BackgroundColor =
   | 'white' | 'black' | 'grey' | 'lightgrey' | 'beige' | 'lightblue' | 'lightyellow'

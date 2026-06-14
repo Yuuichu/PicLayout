@@ -3,6 +3,7 @@ import { ref, reactive } from 'vue'
 import type {
   BackgroundColor,
   FailedImage,
+  ImageRotationDegrees,
   RenderingIntent,
   TargetProfileMode,
   WatermarkConfig,
@@ -81,6 +82,7 @@ export const useAppStore = defineStore('app', () => {
   const selectedFiles = ref<string[]>([])
   const thumbnails = reactive<Record<string, string | null>>({})
   const imageSizes = reactive<Record<string, ImageSize | null>>({})
+  const imageRotations = reactive<Record<string, ImageRotationDegrees>>({})
 
   function setSelectedFiles(files: string[]) {
     selectedFiles.value = files
@@ -108,6 +110,31 @@ export const useAppStore = defineStore('app', () => {
     const [item] = next.splice(from, 1)
     next.splice(to, 0, item)
     selectedFiles.value = next
+  }
+
+  function rotateImage(path: string) {
+    const current = imageRotations[path] ?? 0
+    const next = ((current + 90) % 360) as ImageRotationDegrees
+    if (next === 0) {
+      delete imageRotations[path]
+    } else {
+      imageRotations[path] = next
+    }
+  }
+
+  function getImageRotation(path: string): ImageRotationDegrees {
+    return imageRotations[path] ?? 0
+  }
+
+  function selectedImageRotations(): Record<string, ImageRotationDegrees> {
+    const rotations: Record<string, ImageRotationDegrees> = {}
+    for (const path of selectedFiles.value) {
+      const degrees = getImageRotation(path)
+      if (degrees !== 0) {
+        rotations[path] = degrees
+      }
+    }
+    return rotations
   }
 
   function swapSelectedFiles(first: number, second: number) {
@@ -152,6 +179,11 @@ export const useAppStore = defineStore('app', () => {
         delete imageSizes[path]
       }
     }
+    for (const path of Object.keys(imageRotations)) {
+      if (!selected.has(path)) {
+        delete imageRotations[path]
+      }
+    }
   }
 
   // 处理状态
@@ -189,10 +221,14 @@ export const useAppStore = defineStore('app', () => {
     selectedFiles,
     thumbnails,
     imageSizes,
+    imageRotations,
     setSelectedFiles,
     appendSelectedFiles,
     moveSelectedFile,
     swapSelectedFiles,
+    rotateImage,
+    getImageRotation,
+    selectedImageRotations,
     ensureThumbnail,
     ensureImageSize,
     processing,

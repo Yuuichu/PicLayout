@@ -74,12 +74,22 @@
               class="thumb-img"
               :src="store.thumbnails[f]!"
               :alt="basename(f)"
+              :style="thumbnailImageStyle(f)"
             />
             <span v-else class="thumb-fallback">加载中</span>
           </div>
           <span class="thumb-index">{{ i + 1 }}</span>
           <span class="thumb-name">{{ basename(f) }}</span>
           <div class="thumb-tools">
+            <button
+              class="tool-btn rotate-btn"
+              :disabled="processing"
+              :aria-label="`旋转 ${basename(f)}`"
+              :title="`顺时针旋转 90°，当前 ${store.getImageRotation(f)}°`"
+              @click.stop="rotateImage(f)"
+            >
+              ↻
+            </button>
             <button
               class="tool-btn"
               :disabled="processing || i === 0"
@@ -272,6 +282,16 @@ function moveImage(from: number, to: number) {
   store.moveSelectedFile(from, to)
 }
 
+function rotateImage(path: string) {
+  store.rotateImage(path)
+}
+
+function thumbnailImageStyle(path: string) {
+  return {
+    transform: `rotate(${store.getImageRotation(path)}deg)`,
+  }
+}
+
 function clearImages() {
   store.setSelectedFiles([])
 }
@@ -399,6 +419,8 @@ watch(
   height: 100%;
   object-fit: contain;
   display: block;
+  transform-origin: center;
+  transition: transform 0.15s ease;
 }
 
 .thumb-fallback {
@@ -447,6 +469,9 @@ watch(
   right: 4px;
   display: flex;
   gap: 4px;
+  max-width: calc(100% - 30px);
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .tool-btn,

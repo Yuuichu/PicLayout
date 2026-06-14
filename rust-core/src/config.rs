@@ -1,10 +1,13 @@
 use image::Rgba;
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
 pub struct CollageConfig {
     pub image_paths: Vec<PathBuf>,
+    #[serde(default)]
+    pub image_rotations: HashMap<PathBuf, u16>,
     pub output_dir: PathBuf,
     pub prefix: String,
     #[serde(default = "default_resample_size")]
@@ -24,6 +27,16 @@ pub struct CollageConfig {
     pub output_settings: OutputSettings,
     #[serde(default)]
     pub color_management: ColorManagementConfig,
+}
+
+impl CollageConfig {
+    pub fn image_rotation_degrees(&self, path: &Path) -> u16 {
+        self.image_rotations.get(path).copied().unwrap_or(0)
+    }
+
+    pub fn auto_orient_image(&self, path: &Path) -> bool {
+        self.output_settings.auto_orient && !self.image_rotations.contains_key(path)
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]

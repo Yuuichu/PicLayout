@@ -62,7 +62,7 @@ pub fn prepare_image(
     let oriented = metadata::apply_orientation(
         img,
         metadata::read_orientation(path),
-        config.output_settings.auto_orient,
+        config.auto_orient_image(path),
     );
 
     if !target_profile.enabled {
@@ -159,6 +159,7 @@ mod tests {
     fn config() -> CollageConfig {
         CollageConfig {
             image_paths: vec![],
+            image_rotations: Default::default(),
             output_dir: std::path::PathBuf::new(),
             prefix: "test".into(),
             resample_size: 40,

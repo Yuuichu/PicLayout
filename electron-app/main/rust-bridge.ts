@@ -5,6 +5,7 @@ import { existsSync } from 'fs'
 
 export interface CollageConfig {
   image_paths: string[]
+  image_rotations?: Record<string, 0 | 90 | 180 | 270>
   output_dir: string
   prefix: string
   resample_size?: number
@@ -72,14 +73,10 @@ function getRustCorePath(): string {
 }
 
 function getExpectedOutputPaths(config: CollageConfig): string[] {
-  const paths = [
-    join(config.output_dir, `${config.prefix}_collage.jpg`),
-    join(config.output_dir, `${config.prefix}_collage_final.jpg`),
-  ]
   if (config.watermark) {
-    paths.push(join(config.output_dir, `${config.prefix}_collage_final_watermarked.jpg`))
+    return [join(config.output_dir, `${config.prefix}_collage_final_watermarked.jpg`)]
   }
-  return paths
+  return [join(config.output_dir, `${config.prefix}_collage_final.jpg`)]
 }
 
 function existingPaths(paths: string[]): string[] {

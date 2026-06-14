@@ -11,7 +11,7 @@ use crate::{
     config::{CollageConfig, TargetProfileMode},
     error::AppError,
     image_loader::open_image,
-    image_proc::{add_square_border, resample},
+    image_proc::{add_square_border, apply_manual_rotation, resample},
     progress::{self, FailedImage, ProgressMessage, Stage},
     watermark::add_watermark,
 };
@@ -59,7 +59,9 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
                 let img = open_image(img_path)?;
                 let (prepared, image_warnings) =
                     color::prepare_image(img_path, img, config, &target_profile)?;
-                let resampled = resample(prepared, config.resample_size);
+                let rotated =
+                    apply_manual_rotation(prepared, config.image_rotation_degrees(img_path));
+                let resampled = resample(rotated, config.resample_size);
                 let bordered =
                     add_square_border(resampled, config.border_size, &config.background_color);
                 let temp_path = processed_dir
@@ -127,8 +129,8 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         message: "正在创建拼贴图...".into(),
     });
 
-    let collage_path = config
-        .output_dir
+    let collage_path = processed_dir
+        .path()
         .join(format!("{}_collage.jpg", config.prefix));
     create_collage(&bordered_images, &collage_path, config, output_icc)?;
 
@@ -138,9 +140,15 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         message: "正在添加最终边框...".into(),
     });
 
-    let final_path = config
-        .output_dir
-        .join(format!("{}_collage_final.jpg", config.prefix));
+    let final_path = if config.watermark.is_some() {
+        processed_dir
+            .path()
+            .join(format!("{}_collage_final.jpg", config.prefix))
+    } else {
+        config
+            .output_dir
+            .join(format!("{}_collage_final.jpg", config.prefix))
+    };
     add_final_border_and_resize(
         &collage_path,
         &final_path,
@@ -149,7 +157,7 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         output_icc,
     )?;
 
-    let mut outputs = vec![collage_path, final_path.clone()];
+    let mut outputs = Vec::new();
 
     // 阶段 4：添加水印（可选）
     if let Some(ref wm_config) = config.watermark {
@@ -170,6 +178,8 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
             output_icc,
         )?);
         outputs.push(wm_path);
+    } else {
+        outputs.push(final_path);
     }
 
     Ok(PipelineReport {
@@ -185,6 +195,26 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
 
     if config.image_paths.is_empty() {
         return Err(AppError::Processing("请选择至少 1 张图片".into()));
+    }
+
+    for (path, degrees) in &config.image_rotations {
+        if !matches!(degrees, 0 | 90 | 180 | 270) {
+            return Err(AppError::Processing(format!(
+                "图片旋转角度必须为 0、90、180 或 270 度：{} = {}",
+                path.display(),
+                degrees
+            )));
+        }
+        if !config
+            .image_paths
+            .iter()
+            .any(|image_path| image_path == path)
+        {
+            return Err(AppError::Processing(format!(
+                "图片旋转配置包含未选择的图片：{}",
+                path.display()
+            )));
+        }
     }
 
     if config.image_paths.len() > HARD_MAX_IMAGES {
@@ -264,12 +294,12 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
 
     let planned_cols = (config.image_paths.len() as f64).sqrt().ceil() as u32;
     let planned_rows = (config.image_paths.len() as f64 / planned_cols as f64).ceil() as u32;
-    let collage_width = planned_cols.checked_mul(config.border_size).ok_or_else(|| {
-        AppError::Processing("拼贴图尺寸过大，宽度计算溢出".into())
-    })?;
-    let collage_height = planned_rows.checked_mul(config.border_size).ok_or_else(|| {
-        AppError::Processing("拼贴图尺寸过大，高度计算溢出".into())
-    })?;
+    let collage_width = planned_cols
+        .checked_mul(config.border_size)
+        .ok_or_else(|| AppError::Processing("拼贴图尺寸过大，宽度计算溢出".into()))?;
+    let collage_height = planned_rows
+        .checked_mul(config.border_size)
+        .ok_or_else(|| AppError::Processing("拼贴图尺寸过大，高度计算溢出".into()))?;
     if collage_width > MAX_JPEG_DIMENSION || collage_height > MAX_JPEG_DIMENSION {
         return Err(AppError::Processing(format!(
             "拼贴图尺寸 {}×{} px 超过 JPEG 支持上限 {} px",
@@ -313,9 +343,7 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
             || !(0.0..=100.0).contains(&watermark.position_x_percent)
             || !(0.0..=100.0).contains(&watermark.position_y_percent)
         {
-            return Err(AppError::Processing(
-                "水印位置必须在 0-100% 之间".into(),
-            ));
+            return Err(AppError::Processing("水印位置必须在 0-100% 之间".into()));
         }
     }
 
@@ -353,22 +381,15 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
 }
 
 fn expected_output_paths(config: &CollageConfig) -> Vec<PathBuf> {
-    let mut paths = vec![
-        config
-            .output_dir
-            .join(format!("{}_collage.jpg", config.prefix)),
-        config
-            .output_dir
-            .join(format!("{}_collage_final.jpg", config.prefix)),
-    ];
     if config.watermark.is_some() {
-        paths.push(
-            config
-                .output_dir
-                .join(format!("{}_collage_final_watermarked.jpg", config.prefix)),
-        );
+        vec![config
+            .output_dir
+            .join(format!("{}_collage_final_watermarked.jpg", config.prefix))]
+    } else {
+        vec![config
+            .output_dir
+            .join(format!("{}_collage_final.jpg", config.prefix))]
     }
-    paths
 }
 
 #[cfg(test)]
@@ -385,6 +406,7 @@ mod tests {
     fn base_config(output_dir: PathBuf, image_paths: Vec<PathBuf>) -> CollageConfig {
         CollageConfig {
             image_paths,
+            image_rotations: Default::default(),
             output_dir,
             prefix: "output".into(),
             resample_size: 40,
@@ -409,6 +431,69 @@ mod tests {
             image::Rgb([(x % 255) as u8, (y % 255) as u8, 180])
         }));
         img.save(path).unwrap();
+    }
+
+    fn save_split_test_image(path: &Path) {
+        let img = DynamicImage::ImageRgb8(ImageBuffer::from_fn(20, 10, |x, _y| {
+            if x < 10 {
+                image::Rgb([240, 0, 0])
+            } else {
+                image::Rgb([0, 0, 240])
+            }
+        }));
+        img.save(path).unwrap();
+    }
+
+    fn save_split_test_jpeg_with_orientation(path: &Path, orientation: u16) {
+        save_split_test_image(path);
+        inject_exif_orientation(path, orientation);
+    }
+
+    fn inject_exif_orientation(path: &Path, orientation: u16) {
+        let mut data = fs::read(path).unwrap();
+        assert!(data.starts_with(&[0xFF, 0xD8]));
+
+        let orientation_bytes = orientation.to_le_bytes();
+        let app1 = [
+            0xFF,
+            0xE1,
+            0x00,
+            0x22,
+            b'E',
+            b'x',
+            b'i',
+            b'f',
+            0x00,
+            0x00,
+            b'I',
+            b'I',
+            0x2A,
+            0x00,
+            0x08,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x12,
+            0x01,
+            0x03,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            orientation_bytes[0],
+            orientation_bytes[1],
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+        ];
+        data.splice(2..2, app1);
+        fs::write(path, data).unwrap();
     }
 
     fn read_jfif_dpi(path: &Path) -> Option<u16> {
@@ -558,7 +643,7 @@ mod tests {
     #[test]
     fn validate_rejects_existing_outputs_without_overwrite() {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("output_collage.jpg"), b"existing").unwrap();
+        fs::write(dir.path().join("output_collage_final.jpg"), b"existing").unwrap();
         let config = base_config(dir.path().to_path_buf(), vec![dir.path().join("a.jpg")]);
 
         let err = validate_config(&config).unwrap_err().to_string();
@@ -582,8 +667,9 @@ mod tests {
         assert_eq!(report.processed_count, 1);
         assert_eq!(report.failed_images.len(), 1);
         assert_eq!(report.failed_images[0].path, bad.to_string_lossy());
-        assert_eq!(report.outputs.len(), 2);
+        assert_eq!(report.outputs.len(), 1);
         assert!(report.outputs.iter().all(|path| path.exists()));
+        assert!(!dir.path().join("partial_collage.jpg").exists());
     }
 
     #[test]
@@ -601,8 +687,144 @@ mod tests {
 
         assert_eq!(report.processed_count, 2);
         assert!(report.failed_images.is_empty());
-        assert_eq!(report.outputs.len(), 2);
-        assert_eq!(read_jfif_dpi(&report.outputs[1]), Some(300));
+        assert_eq!(report.outputs.len(), 1);
+        assert_eq!(read_jfif_dpi(&report.outputs[0]), Some(300));
+    }
+
+    #[test]
+    fn run_applies_image_rotation_from_preview_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("split.png");
+        save_split_test_image(&input);
+
+        let config: CollageConfig = serde_json::from_value(serde_json::json!({
+            "image_paths": [input],
+            "image_rotations": {
+                input.to_string_lossy().as_ref(): 90
+            },
+            "output_dir": dir.path(),
+            "prefix": "rotated",
+            "resample_size": 40,
+            "border_size": 60,
+            "final_size": 2100,
+            "dpi": 300,
+            "background_color": "white",
+            "overwrite": false,
+            "output_settings": {
+                "jpeg_quality": 100,
+                "auto_orient": false
+            },
+            "color_management": {
+                "enabled": false,
+                "target_profile": "srgb",
+                "rendering_intent": "perceptual"
+            }
+        }))
+        .unwrap();
+
+        let report = run(&config).unwrap();
+        let collage = image::open(&report.outputs[0]).unwrap().to_rgb8();
+        let top_center = collage.get_pixel(1050, 1025).0;
+
+        assert!(
+            top_center[0] > 180 && top_center[2] < 80,
+            "expected top center to be red after 90 degree rotation, got {:?}",
+            top_center
+        );
+    }
+
+    #[test]
+    fn manual_rotation_overrides_exif_auto_orientation_for_that_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("split.jpg");
+        save_split_test_jpeg_with_orientation(&input, 8);
+
+        let config: CollageConfig = serde_json::from_value(serde_json::json!({
+            "image_paths": [input],
+            "image_rotations": {
+                input.to_string_lossy().as_ref(): 90
+            },
+            "output_dir": dir.path(),
+            "prefix": "manual_over_exif",
+            "resample_size": 40,
+            "border_size": 60,
+            "final_size": 2100,
+            "dpi": 300,
+            "background_color": "white",
+            "overwrite": false,
+            "output_settings": {
+                "jpeg_quality": 100,
+                "auto_orient": true
+            },
+            "color_management": {
+                "enabled": false,
+                "target_profile": "srgb",
+                "rendering_intent": "perceptual"
+            }
+        }))
+        .unwrap();
+
+        let report = run(&config).unwrap();
+        let collage = image::open(&report.outputs[0]).unwrap().to_rgb8();
+        let top_center = collage.get_pixel(1050, 1025).0;
+
+        assert!(
+            top_center[0] > 180 && top_center[2] < 100,
+            "expected manual rotation to match preview instead of stacking on EXIF, got {:?}",
+            top_center
+        );
+    }
+
+    #[test]
+    fn run_without_watermark_removes_collage_intermediate() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        save_test_image(&image, 20, 10);
+
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.prefix = "no_watermark".into();
+
+        let report = run(&config).unwrap();
+
+        assert_eq!(
+            report.outputs,
+            vec![dir.path().join("no_watermark_collage_final.jpg")]
+        );
+        assert!(dir.path().join("no_watermark_collage_final.jpg").exists());
+        assert!(!dir.path().join("no_watermark_collage.jpg").exists());
+    }
+
+    #[test]
+    fn run_with_watermark_removes_collage_and_unwatermarked_intermediates() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        let watermark = dir.path().join("watermark.png");
+        save_test_image(&image, 20, 10);
+        save_test_image(&watermark, 4, 4);
+
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.prefix = "watermark_only".into();
+        config.watermark = Some(WatermarkConfig {
+            path: watermark,
+            scale_percent: 100.0,
+            position_x_percent: 50.0,
+            position_y_percent: 50.0,
+        });
+
+        let report = run(&config).unwrap();
+
+        assert_eq!(
+            report.outputs,
+            vec![dir
+                .path()
+                .join("watermark_only_collage_final_watermarked.jpg")]
+        );
+        assert!(dir
+            .path()
+            .join("watermark_only_collage_final_watermarked.jpg")
+            .exists());
+        assert!(!dir.path().join("watermark_only_collage.jpg").exists());
+        assert!(!dir.path().join("watermark_only_collage_final.jpg").exists());
     }
 
     #[test]
@@ -624,7 +846,12 @@ mod tests {
 
         let report = run(&config).unwrap();
 
-        assert_eq!(report.outputs.len(), 3);
-        assert!(report.outputs[2].exists());
+        assert_eq!(report.outputs.len(), 1);
+        assert!(report.outputs[0].exists());
+        assert!(report.outputs[0]
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with("_collage_final_watermarked.jpg"));
     }
 }

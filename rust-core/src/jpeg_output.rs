@@ -53,6 +53,7 @@ mod tests {
     fn config(output_dir: std::path::PathBuf) -> CollageConfig {
         CollageConfig {
             image_paths: vec![],
+            image_rotations: Default::default(),
             output_dir,
             prefix: "test".into(),
             resample_size: 40,

@@ -17,6 +17,15 @@ pub fn resample(img: DynamicImage, max_size: u32) -> DynamicImage {
     img.resize_exact(new_w, new_h, FilterType::Lanczos3)
 }
 
+pub fn apply_manual_rotation(img: DynamicImage, degrees: u16) -> DynamicImage {
+    match degrees {
+        90 => img.rotate90(),
+        180 => img.rotate180(),
+        270 => img.rotate270(),
+        _ => img,
+    }
+}
+
 /// 添加正方形边框：将图片（已由 resample 缩放好）居中放置在 border_size × border_size 背景上
 pub fn add_square_border(
     img: DynamicImage,
@@ -67,6 +76,16 @@ mod tests {
         let out = resample(img, 4000);
         assert_eq!(out.height(), 4000);
         assert_eq!(out.width(), 2000);
+    }
+
+    #[test]
+    fn manual_rotation_rotates_90_degrees() {
+        let img = make_test_image(2, 3);
+
+        let out = apply_manual_rotation(img, 90);
+
+        assert_eq!(out.width(), 3);
+        assert_eq!(out.height(), 2);
     }
 
     #[test]

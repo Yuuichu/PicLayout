@@ -120,6 +120,7 @@ async function startCollage() {
   const s = store.settings
   const config: CollageConfig = {
     image_paths: store.selectedFiles,
+    image_rotations: store.selectedImageRotations(),
     output_dir: s.outputDir,
     prefix: s.prefix || 'output',
     resample_size: s.resampleSize,
