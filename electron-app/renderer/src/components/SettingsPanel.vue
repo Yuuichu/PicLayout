@@ -62,6 +62,33 @@
       <p class="section-title">输出质量</p>
 
       <div class="form-row">
+        <label>质量模式</label>
+        <div class="segmented-control">
+          <button
+            type="button"
+            :class="{ active: s.processingMode === 'standard_high_quality' }"
+            @click="setProcessingMode('standard_high_quality')"
+          >
+            标准高画质
+          </button>
+          <button
+            type="button"
+            :class="{ active: s.processingMode === 'maximum_quality' }"
+            @click="setProcessingMode('maximum_quality')"
+          >
+            极致高画质
+          </button>
+          <button
+            type="button"
+            :class="{ active: s.processingMode === 'fast_preview' }"
+            @click="setProcessingMode('fast_preview')"
+          >
+            快速预览
+          </button>
+        </div>
+      </div>
+
+      <div class="form-row">
         <label>JPEG 质量</label>
         <input v-model.number="s.jpegQuality" type="number" min="1" max="100" style="max-width:90px" @change="save" />
         <span class="hint">默认 95</span>
@@ -71,6 +98,13 @@
         <label>
           <input type="checkbox" v-model="s.autoOrient" style="margin-right: 6px" @change="save" />
           EXIF 自动旋正
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>
+          <input type="checkbox" v-model="s.linearLightResize" style="margin-right: 6px" @change="save" />
+          线性光高画质缩放
         </label>
       </div>
     </div>
@@ -120,7 +154,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
-import { BACKGROUND_COLOR_OPTIONS, type BackgroundColor } from '../types/protocol'
+import { BACKGROUND_COLOR_OPTIONS, type BackgroundColor, type ProcessingMode } from '../types/protocol'
 
 const store = useAppStore()
 const s = store.settings
@@ -137,6 +171,12 @@ const iccBasename = computed(() => {
 
 function selectColor(val: BackgroundColor) {
   s.backgroundColor = val
+  save()
+}
+
+function setProcessingMode(mode: ProcessingMode) {
+  s.processingMode = mode
+  s.linearLightResize = mode === 'maximum_quality'
   save()
 }
 
@@ -162,6 +202,31 @@ async function selectIccProfile() {
 .color-selector {
   display: flex;
   gap: 6px;
+}
+
+.segmented-control {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented-control button {
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  background: #f7f7f7;
+  color: var(--color-text);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.segmented-control button:last-child {
+  border-right: 0;
+}
+
+.segmented-control button.active {
+  background: var(--color-primary);
+  color: white;
 }
 
 .color-swatch {

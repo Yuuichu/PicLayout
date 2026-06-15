@@ -1,6 +1,7 @@
 export interface CollageConfig {
   image_paths: string[]
   image_rotations: Record<string, ImageRotationDegrees>
+  processing_mode: ProcessingMode
   output_dir: string
   prefix: string
   resample_size: number
@@ -15,6 +16,7 @@ export interface CollageConfig {
 }
 
 export type ImageRotationDegrees = 0 | 90 | 180 | 270
+export type ProcessingMode = 'standard_high_quality' | 'maximum_quality' | 'fast_preview'
 
 export type BackgroundColor =
   | 'white' | 'black' | 'grey' | 'lightgrey' | 'beige' | 'lightblue' | 'lightyellow'
@@ -29,6 +31,7 @@ export interface WatermarkConfig {
 export interface OutputSettings {
   jpeg_quality: number
   auto_orient: boolean
+  linear_light_resize: boolean
 }
 
 export type TargetProfileMode = 'srgb' | 'custom'
@@ -46,22 +49,46 @@ export interface FailedImage {
   message: string
 }
 
+export interface StageTimingDetail {
+  name: string
+  elapsed_ms: number
+}
+
+export interface StageTiming {
+  stage: string
+  elapsed_ms: number
+  details?: StageTimingDetail[]
+}
+
 export interface CollageResult {
   outputs: string[]
   processed_count: number
   failed_images: FailedImage[]
   warnings: string[]
+  elapsed_ms: number
+  wall_elapsed_ms: number
+  stage_timings: StageTiming[]
 }
 
 export type ProgressMessage =
-  | { type: 'image_processed'; index: number; total: number }
-  | { type: 'stage_changed'; stage: string; message: string }
+  | { type: 'job_started'; total: number }
+  | { type: 'image_processed'; index: number; total: number; elapsed_ms: number }
+  | { type: 'stage_changed'; stage: string; message: string; elapsed_ms: number }
+  | {
+      type: 'stage_finished'
+      stage: string
+      elapsed_ms: number
+      total_elapsed_ms: number
+      details?: StageTimingDetail[]
+    }
   | {
       type: 'completed'
       outputs: string[]
       processed_count: number
       failed_images: FailedImage[]
       warnings: string[]
+      elapsed_ms: number
+      stage_timings: StageTiming[]
     }
   | { type: 'cancelled'; message: string; partial_outputs: string[] }
   | { type: 'error'; message: string }

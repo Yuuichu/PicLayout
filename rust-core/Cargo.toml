@@ -10,6 +10,8 @@ path = "src/main.rs"
 [dependencies]
 # 图像处理
 image = { version = "0.25", features = ["jpeg", "png", "bmp", "tiff"] }
+fast_image_resize = { version = "6.0.0", features = ["image", "rayon"] }
+turbojpeg = { version = "1.4.0", features = ["image"] }
 
 # 色彩管理与元数据
 lcms2 = "6.1"

@@ -1,23 +1,42 @@
 <template>
-  <div class="progress-area" v-if="store.processing || store.outputFiles.length > 0 || store.cancelledMessage || store.errorMessage">
-
-    <!-- 处理中 -->
+  <div
+    v-if="store.processing || store.outputFiles.length > 0 || store.cancelledMessage || store.errorMessage"
+    class="progress-area"
+  >
     <div v-if="store.processing" class="card progress-card">
-      <div class="status-text">{{ store.statusMessage || '正在处理...' }}</div>
+      <div class="status-row">
+        <div class="status-text">{{ store.statusMessage || '正在处理...' }}</div>
+        <div class="time-text">总耗时 {{ formatMs(store.wallElapsedMs) }}</div>
+      </div>
       <div class="progress-track">
         <div class="progress-fill" :style="{ width: store.progress + '%' }" />
       </div>
       <div class="progress-pct">{{ store.progress }}%</div>
+      <div v-if="visibleTimings.length" class="stage-timings">
+        <span v-for="item in visibleTimings" :key="item.stage">
+          {{ item.label }} {{ formatMs(item.elapsed_ms) }}
+          <template v-if="item.detailsLabel">（{{ item.detailsLabel }}）</template>
+        </span>
+      </div>
       <button class="btn-danger cancel-btn" @click="cancel">取消</button>
     </div>
 
-    <!-- 完成 -->
     <div v-else-if="store.outputFiles.length > 0" class="card result-card">
-      <p class="result-title">✓ 拼贴完成</p>
+      <p class="result-title">拼贴完成</p>
       <p class="result-summary">
         成功处理 {{ store.processedCount }} 张
         <span v-if="store.failedImages.length">，失败 {{ store.failedImages.length }} 张</span>
       </p>
+      <p class="result-summary">
+        Rust 核心耗时 {{ formatMs(store.elapsedMs) }}
+        <span v-if="store.wallElapsedMs">，总耗时 {{ formatMs(store.wallElapsedMs) }}</span>
+      </p>
+      <div v-if="visibleTimings.length" class="stage-timings">
+        <span v-for="item in visibleTimings" :key="item.stage">
+          {{ item.label }} {{ formatMs(item.elapsed_ms) }}
+          <template v-if="item.detailsLabel">（{{ item.detailsLabel }}）</template>
+        </span>
+      </div>
       <ul class="output-list">
         <li v-for="f in store.outputFiles" :key="f" :title="f">
           {{ basename(f) }}
@@ -36,7 +55,6 @@
       </div>
     </div>
 
-    <!-- 已取消 -->
     <div v-else-if="store.cancelledMessage" class="card cancelled-card">
       <p class="cancelled-title">已取消</p>
       <p class="cancelled-msg">{{ store.cancelledMessage }}</p>
@@ -47,22 +65,52 @@
       </ul>
     </div>
 
-    <!-- 错误 -->
     <div v-else-if="store.errorMessage" class="card error-card">
-      <p class="error-title">✗ 处理失败</p>
+      <p class="error-title">处理失败</p>
       <p class="error-msg">{{ store.errorMessage }}</p>
     </div>
-
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
 
 const store = useAppStore()
 
+const stageLabels: Record<string, string> = {
+  processing_images: '单图处理',
+  creating_collage: '贴入最终画布',
+  adding_border: '最终边框',
+  adding_watermark: '水印',
+  saving_output: 'JPEG 输出',
+}
+
+const detailLabels: Record<string, string> = {
+  decode: '解码',
+  color_orient: '颜色/方向',
+  resize: '缩放',
+}
+
+const visibleTimings = computed(() =>
+  store.stageTimings.map((item) => ({
+    ...item,
+    label: stageLabels[item.stage] ?? item.stage,
+    detailsLabel: (item.details ?? [])
+      .filter((detail) => detail.elapsed_ms > 0)
+      .map((detail) => `${detailLabels[detail.name] ?? detail.name} ${formatMs(detail.elapsed_ms)}`)
+      .join(' / '),
+  }))
+)
+
 function basename(path: string): string {
   return path.replace(/\\/g, '/').split('/').pop() ?? path
+}
+
+function formatMs(ms: number): string {
+  if (!ms) return '0.0s'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 async function cancel() {
@@ -79,6 +127,7 @@ async function openOutputDir() {
   }
   store.errorMessage = ''
 }
+
 </script>
 
 <style scoped>
@@ -92,9 +141,23 @@ async function openOutputDir() {
   gap: 8px;
 }
 
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
 .status-text {
   font-size: 13px;
   color: var(--color-text-secondary);
+}
+
+.time-text,
+.progress-pct {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-align: right;
 }
 
 .progress-track {
@@ -111,10 +174,12 @@ async function openOutputDir() {
   transition: width 0.3s ease;
 }
 
-.progress-pct {
-  font-size: 12px;
+.stage-timings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 11px;
   color: var(--color-text-secondary);
-  text-align: right;
 }
 
 .cancel-btn {

@@ -4,7 +4,9 @@ import type {
   BackgroundColor,
   FailedImage,
   ImageRotationDegrees,
+  ProcessingMode,
   RenderingIntent,
+  StageTiming,
   TargetProfileMode,
   WatermarkConfig,
 } from '../types/protocol'
@@ -26,8 +28,10 @@ interface Settings {
   backgroundColor: BackgroundColor
   prefix: string
   outputDir: string
+  processingMode: ProcessingMode
   jpegQuality: number
   autoOrient: boolean
+  linearLightResize: boolean
   colorManagementEnabled: boolean
   targetProfileMode: TargetProfileMode
   targetProfilePath: string
@@ -39,7 +43,21 @@ interface Settings {
 function loadSettings(): Settings {
   try {
     const stored = localStorage.getItem(SETTINGS_KEY)
-    if (stored) return { ...defaultSettings(), ...JSON.parse(stored) }
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      const settings = { ...defaultSettings(), ...parsed }
+      if (!parsed.processingMode) {
+        settings.processingMode = 'standard_high_quality'
+        settings.linearLightResize = false
+      } else if (parsed.processingMode === 'high_quality') {
+        settings.processingMode = 'maximum_quality'
+      } else if (parsed.processingMode === 'standard') {
+        settings.processingMode = 'standard_high_quality'
+      } else if (parsed.processingMode === 'fast') {
+        settings.processingMode = 'fast_preview'
+      }
+      return settings
+    }
   } catch {}
   return defaultSettings()
 }
@@ -54,8 +72,10 @@ function defaultSettings(): Settings {
     backgroundColor: 'white',
     prefix: 'output',
     outputDir: '',
+    processingMode: 'standard_high_quality',
     jpegQuality: 95,
     autoOrient: true,
+    linearLightResize: false,
     colorManagementEnabled: true,
     targetProfileMode: 'srgb',
     targetProfilePath: '',
@@ -194,6 +214,9 @@ export const useAppStore = defineStore('app', () => {
   const processedCount = ref(0)
   const failedImages = ref<FailedImage[]>([])
   const warnings = ref<string[]>([])
+  const elapsedMs = ref(0)
+  const wallElapsedMs = ref(0)
+  const stageTimings = ref<StageTiming[]>([])
   const cancelledMessage = ref('')
   const partialOutputs = ref<string[]>([])
   const errorMessage = ref('')
@@ -205,6 +228,9 @@ export const useAppStore = defineStore('app', () => {
     processedCount.value = 0
     failedImages.value = []
     warnings.value = []
+    elapsedMs.value = 0
+    wallElapsedMs.value = 0
+    stageTimings.value = []
     cancelledMessage.value = ''
     partialOutputs.value = []
     errorMessage.value = ''
@@ -213,6 +239,16 @@ export const useAppStore = defineStore('app', () => {
   function setProgress(pct: number, msg: string) {
     progress.value = pct
     statusMessage.value = msg
+  }
+
+  function setElapsed(ms: number) {
+    elapsedMs.value = ms
+  }
+
+  function setStageTiming(timing: StageTiming) {
+    const next = stageTimings.value.filter((item) => item.stage !== timing.stage)
+    next.push(timing)
+    stageTimings.value = next
   }
 
   return {
@@ -238,10 +274,15 @@ export const useAppStore = defineStore('app', () => {
     processedCount,
     failedImages,
     warnings,
+    elapsedMs,
+    wallElapsedMs,
+    stageTimings,
     cancelledMessage,
     partialOutputs,
     errorMessage,
     resetProgress,
     setProgress,
+    setElapsed,
+    setStageTiming,
   }
 })

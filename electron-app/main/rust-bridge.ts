@@ -1,11 +1,12 @@
 import { spawn, ChildProcess } from 'child_process'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { app } from 'electron'
-import { existsSync } from 'fs'
+import { existsSync, readdirSync, unlinkSync } from 'fs'
 
 export interface CollageConfig {
   image_paths: string[]
   image_rotations?: Record<string, 0 | 90 | 180 | 270>
+  processing_mode?: 'standard_high_quality' | 'maximum_quality' | 'fast_preview'
   output_dir: string
   prefix: string
   resample_size?: number
@@ -17,6 +18,7 @@ export interface CollageConfig {
   output_settings?: {
     jpeg_quality?: number
     auto_orient?: boolean
+    linear_light_resize?: boolean
   }
   color_management?: {
     enabled?: boolean
@@ -37,22 +39,46 @@ export interface FailedImage {
   message: string
 }
 
+export interface StageTiming {
+  stage: string
+  elapsed_ms: number
+  details?: StageTimingDetail[]
+}
+
+export interface StageTimingDetail {
+  name: string
+  elapsed_ms: number
+}
+
 export interface CollageResult {
   outputs: string[]
   processed_count: number
   failed_images: FailedImage[]
   warnings: string[]
+  elapsed_ms: number
+  wall_elapsed_ms: number
+  stage_timings: StageTiming[]
 }
 
 export type ProgressMessage =
-  | { type: 'image_processed'; index: number; total: number }
-  | { type: 'stage_changed'; stage: string; message: string }
+  | { type: 'job_started'; total: number }
+  | { type: 'image_processed'; index: number; total: number; elapsed_ms: number }
+  | { type: 'stage_changed'; stage: string; message: string; elapsed_ms: number }
+  | {
+      type: 'stage_finished'
+      stage: string
+      elapsed_ms: number
+      total_elapsed_ms: number
+      details?: StageTimingDetail[]
+    }
   | {
       type: 'completed'
       outputs: string[]
       processed_count: number
       failed_images: FailedImage[]
       warnings: string[]
+      elapsed_ms: number
+      stage_timings: StageTiming[]
     }
   | { type: 'cancelled'; message: string; partial_outputs: string[] }
   | { type: 'error'; message: string }
@@ -61,7 +87,7 @@ function getRustCorePath(): string {
   if (app.isPackaged) {
     return join(process.resourcesPath, 'rust-core.exe')
   }
-  // 开发模式：优先 release，其次 debug
+
   const releaseExe = join(__dirname, '../../../rust-core/target/release/rust-core.exe')
   const debugExe = join(__dirname, '../../../rust-core/target/debug/rust-core.exe')
   try {
@@ -83,6 +109,21 @@ function existingPaths(paths: string[]): string[] {
   return paths.filter((path) => existsSync(path))
 }
 
+function cleanupTempOutputs(paths: string[]): void {
+  const dirs = new Set(paths.map((path) => dirname(path)))
+  for (const dir of dirs) {
+    try {
+      for (const entry of readdirSync(dir)) {
+        if (entry.startsWith('.piclayout-') && entry.endsWith('.tmp')) {
+          unlinkSync(join(dir, entry))
+        }
+      }
+    } catch (err) {
+      console.error('cleanup temp outputs failed:', dir, err)
+    }
+  }
+}
+
 export class RustBridge {
   private process: ChildProcess | null = null
   private cancelled = false
@@ -94,9 +135,12 @@ export class RustBridge {
   ): Promise<CollageResult> {
     return new Promise((resolve, reject) => {
       const exePath = getRustCorePath()
+      const startedAt = Date.now()
       this.cancelled = false
       this.expectedOutputs = getExpectedOutputPaths(config)
       let settled = false
+
+      const wallElapsed = () => Date.now() - startedAt
 
       const resolveOnce = (result: CollageResult) => {
         if (settled) return
@@ -121,12 +165,15 @@ export class RustBridge {
               processed_count: msg.processed_count,
               failed_images: msg.failed_images,
               warnings: msg.warnings,
+              elapsed_ms: msg.elapsed_ms,
+              wall_elapsed_ms: wallElapsed(),
+              stage_timings: msg.stage_timings,
             })
           } else if (msg.type === 'error') {
             rejectOnce(new Error(msg.message))
           }
         } catch (e) {
-          console.error('解析进度消息失败:', line, e)
+          console.error('failed to parse rust-core progress message:', line, e)
         }
       }
 
@@ -134,13 +181,11 @@ export class RustBridge {
         stdio: ['pipe', 'pipe', 'pipe'],
       })
 
-      // 写入 JSON 配置到 stdin（一行）
       this.process.stdin!.write(JSON.stringify(config) + '\n')
       this.process.stdin!.end()
 
       let buffer = ''
 
-      // 逐行读取 stdout NDJSON
       this.process.stdout!.on('data', (data: Buffer) => {
         buffer += data.toString()
         const lines = buffer.split('\n')
@@ -167,14 +212,18 @@ export class RustBridge {
         buffer = ''
 
         const wasCancelled = this.cancelled
+        if (wasCancelled) {
+          cleanupTempOutputs(this.expectedOutputs)
+        }
         const partialOutputs = existingPaths(this.expectedOutputs)
         this.process = null
         this.expectedOutputs = []
         this.cancelled = false
+
         if (wasCancelled) {
           onProgress({
             type: 'cancelled',
-            message: '已取消处理，可能存在半成品文件。',
+            message: '已取消处理，临时输出文件已清理。',
             partial_outputs: partialOutputs,
           })
           resolveOnce({
@@ -182,6 +231,9 @@ export class RustBridge {
             processed_count: 0,
             failed_images: [],
             warnings: ['任务已取消'],
+            elapsed_ms: wallElapsed(),
+            wall_elapsed_ms: wallElapsed(),
+            stage_timings: [],
           })
           return
         }

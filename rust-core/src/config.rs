@@ -8,6 +8,8 @@ pub struct CollageConfig {
     pub image_paths: Vec<PathBuf>,
     #[serde(default)]
     pub image_rotations: HashMap<PathBuf, u16>,
+    #[serde(default)]
+    pub processing_mode: ProcessingMode,
     pub output_dir: PathBuf,
     pub prefix: String,
     #[serde(default = "default_resample_size")]
@@ -37,6 +39,12 @@ impl CollageConfig {
     pub fn auto_orient_image(&self, path: &Path) -> bool {
         self.output_settings.auto_orient && !self.image_rotations.contains_key(path)
     }
+
+    pub fn linear_light_resize(&self) -> bool {
+        self.output_settings
+            .linear_light_resize
+            .unwrap_or_else(|| self.processing_mode.default_linear_light_resize())
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -50,6 +58,24 @@ pub enum BackgroundColor {
     Beige,
     Lightblue,
     Lightyellow,
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessingMode {
+    #[default]
+    #[serde(alias = "standard")]
+    StandardHighQuality,
+    #[serde(alias = "high_quality")]
+    MaximumQuality,
+    #[serde(alias = "fast")]
+    FastPreview,
+}
+
+impl ProcessingMode {
+    pub fn default_linear_light_resize(self) -> bool {
+        matches!(self, ProcessingMode::MaximumQuality)
+    }
 }
 
 impl BackgroundColor {
@@ -89,6 +115,8 @@ pub struct OutputSettings {
     pub jpeg_quality: u8,
     #[serde(default = "default_auto_orient")]
     pub auto_orient: bool,
+    #[serde(default)]
+    pub linear_light_resize: Option<bool>,
 }
 
 impl Default for OutputSettings {
@@ -96,6 +124,7 @@ impl Default for OutputSettings {
         Self {
             jpeg_quality: default_jpeg_quality(),
             auto_orient: default_auto_orient(),
+            linear_light_resize: None,
         }
     }
 }
@@ -167,4 +196,80 @@ fn default_auto_orient() -> bool {
 }
 fn default_color_management_enabled() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn parse_config(value: serde_json::Value) -> CollageConfig {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn processing_mode_defaults_to_standard_high_quality() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test"
+        }));
+
+        assert_eq!(config.processing_mode, ProcessingMode::StandardHighQuality);
+        assert!(!config.linear_light_resize());
+    }
+
+    #[test]
+    fn maximum_quality_enables_linear_light_by_default() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "processing_mode": "maximum_quality",
+            "output_dir": ".",
+            "prefix": "test"
+        }));
+
+        assert_eq!(config.processing_mode, ProcessingMode::MaximumQuality);
+        assert!(config.linear_light_resize());
+    }
+
+    #[test]
+    fn linear_light_setting_overrides_processing_mode_default() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "processing_mode": "maximum_quality",
+            "output_dir": ".",
+            "prefix": "test",
+            "output_settings": {
+                "linear_light_resize": false
+            }
+        }));
+
+        assert!(!config.linear_light_resize());
+    }
+
+    #[test]
+    fn legacy_processing_mode_values_still_deserialize() {
+        let high_quality = parse_config(json!({
+            "image_paths": [],
+            "processing_mode": "high_quality",
+            "output_dir": ".",
+            "prefix": "test"
+        }));
+        let standard = parse_config(json!({
+            "image_paths": [],
+            "processing_mode": "standard",
+            "output_dir": ".",
+            "prefix": "test"
+        }));
+        let fast = parse_config(json!({
+            "image_paths": [],
+            "processing_mode": "fast",
+            "output_dir": ".",
+            "prefix": "test"
+        }));
+
+        assert_eq!(high_quality.processing_mode, ProcessingMode::MaximumQuality);
+        assert_eq!(standard.processing_mode, ProcessingMode::StandardHighQuality);
+        assert_eq!(fast.processing_mode, ProcessingMode::FastPreview);
+    }
 }

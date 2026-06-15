@@ -60,6 +60,8 @@ fn main() {
                 processed_count: report.processed_count,
                 failed_images: report.failed_images,
                 warnings: report.warnings,
+                elapsed_ms: report.elapsed_ms,
+                stage_timings: report.stage_timings,
             });
         }
         Err(e) => {

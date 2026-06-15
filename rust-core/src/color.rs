@@ -13,6 +13,7 @@ use crate::{
 pub struct TargetColorProfile {
     pub enabled: bool,
     pub icc: Option<Vec<u8>>,
+    pub is_srgb: bool,
 }
 
 pub fn load_target_profile(config: &CollageConfig) -> Result<TargetColorProfile, AppError> {
@@ -20,9 +21,11 @@ pub fn load_target_profile(config: &CollageConfig) -> Result<TargetColorProfile,
         return Ok(TargetColorProfile {
             enabled: false,
             icc: None,
+            is_srgb: false,
         });
     }
 
+    let is_srgb = matches!(config.color_management.target_profile, TargetProfileMode::Srgb);
     let icc = match config.color_management.target_profile {
         TargetProfileMode::Srgb => Profile::new_srgb()
             .icc()
@@ -49,6 +52,7 @@ pub fn load_target_profile(config: &CollageConfig) -> Result<TargetColorProfile,
     Ok(TargetColorProfile {
         enabled: true,
         icc: Some(icc),
+        is_srgb,
     })
 }
 
@@ -58,10 +62,28 @@ pub fn prepare_image(
     config: &CollageConfig,
     target_profile: &TargetColorProfile,
 ) -> Result<(DynamicImage, Vec<String>), AppError> {
-    let mut warnings = Vec::new();
-    let oriented = metadata::apply_orientation(
+    prepare_image_with_metadata(
+        path,
         img,
         metadata::read_orientation(path),
+        metadata::extract_icc_profile(path)?,
+        config,
+        target_profile,
+    )
+}
+
+pub fn prepare_image_with_metadata(
+    path: &Path,
+    img: DynamicImage,
+    orientation: Option<u16>,
+    input_icc: Option<Vec<u8>>,
+    config: &CollageConfig,
+    target_profile: &TargetColorProfile,
+) -> Result<(DynamicImage, Vec<String>), AppError> {
+    let warnings = Vec::new();
+    let oriented = metadata::apply_orientation(
+        img,
+        orientation,
         config.auto_orient_image(path),
     );
 
@@ -74,18 +96,15 @@ pub fn prepare_image(
         .as_deref()
         .ok_or_else(|| AppError::Processing("目标 ICC profile 未初始化".into()))?;
 
-    let input_icc = match metadata::extract_icc_profile(path)? {
+    let input_icc = match input_icc {
         Some(icc) => {
             validate_rgb_profile(&icc, "输入 ICC profile")?;
             icc
         }
         None => {
-            warnings.push(format!(
-                "{} 未包含 ICC profile，已按 sRGB 解释",
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("图片")
-            ));
+            if target_profile.is_srgb {
+                return Ok((oriented, warnings));
+            }
             Profile::new_srgb()
                 .icc()
                 .map_err(|e| AppError::Processing(format!("创建 sRGB ICC profile 失败: {}", e)))?
@@ -152,7 +171,8 @@ fn to_lcms_intent(intent: RenderingIntent) -> Intent {
 mod tests {
     use super::*;
     use crate::config::{
-        BackgroundColor, ColorManagementConfig, OutputSettings, RenderingIntent, TargetProfileMode,
+        BackgroundColor, ColorManagementConfig, OutputSettings, ProcessingMode, RenderingIntent,
+        TargetProfileMode,
     };
     use image::{ImageBuffer, Rgba};
 
@@ -160,6 +180,7 @@ mod tests {
         CollageConfig {
             image_paths: vec![],
             image_rotations: Default::default(),
+            processing_mode: ProcessingMode::StandardHighQuality,
             output_dir: std::path::PathBuf::new(),
             prefix: "test".into(),
             resample_size: 40,

@@ -1,26 +1,27 @@
 <template>
   <div class="app-layout">
-    <!-- 标题栏 -->
     <header class="app-header">
       <h1 class="app-title">PicLayout</h1>
       <span class="app-subtitle">图片拼贴排版工具</span>
     </header>
 
-    <!-- 标签页 -->
     <div class="tabs">
       <button
         class="tab-btn"
         :class="{ active: activeTab === 'home' }"
         @click="activeTab = 'home'"
-      >主页</button>
+      >
+        主页
+      </button>
       <button
         class="tab-btn"
         :class="{ active: activeTab === 'settings' }"
         @click="activeTab = 'settings'"
-      >设置</button>
+      >
+        设置
+      </button>
     </div>
 
-    <!-- 主页 -->
     <div v-show="activeTab === 'home'" class="tab-content">
       <FileSelector />
 
@@ -37,12 +38,10 @@
       <ProgressBar />
     </div>
 
-    <!-- 设置页 -->
     <div v-show="activeTab === 'settings'" class="tab-content">
       <SettingsPanel />
     </div>
 
-    <!-- 底部版权 -->
     <footer class="app-footer">© Yuui's PicLayoutTool</footer>
   </div>
 </template>
@@ -62,15 +61,17 @@ const canStart = computed(
   () => store.selectedFiles.length > 0 && !!store.settings.outputDir && !store.processing
 )
 
-// 进度处理：阶段权重映射
 const STAGE_PROGRESS: Record<string, number> = {
   processing_images: 0,
   creating_collage: 62,
   adding_border: 82,
   adding_watermark: 92,
+  saving_output: 96,
 }
 
 let removeProgressListener: (() => void) | null = null
+let uiTaskStartedAt = 0
+let wallTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   removeProgressListener = window.electronAPI.onProgress(handleProgress)
@@ -78,49 +79,98 @@ onMounted(() => {
 
 onUnmounted(() => {
   removeProgressListener?.()
+  stopWallTimer()
 })
 
+function startWallTimer(startedAt: number) {
+  uiTaskStartedAt = startedAt
+  store.wallElapsedMs = 0
+  stopWallTimer()
+  wallTimer = setInterval(updateWallElapsed, 200)
+  updateWallElapsed()
+}
+
+function stopWallTimer() {
+  if (!wallTimer) return
+  clearInterval(wallTimer)
+  wallTimer = null
+}
+
+function updateWallElapsed() {
+  if (!uiTaskStartedAt) return
+  store.wallElapsedMs = Math.round(performance.now() - uiTaskStartedAt)
+}
+
+function finishWallTimer() {
+  updateWallElapsed()
+  stopWallTimer()
+}
+
 function handleProgress(msg: ProgressMessage) {
-  if (msg.type === 'image_processed') {
+  if (msg.type === 'job_started') {
+    store.setElapsed(0)
+  } else if (msg.type === 'image_processed') {
     const pct = Math.round((msg.index / msg.total) * 60)
+    store.setElapsed(msg.elapsed_ms)
     store.setProgress(pct, `处理图片 ${msg.index}/${msg.total}`)
   } else if (msg.type === 'stage_changed') {
     const basePct = STAGE_PROGRESS[msg.stage] ?? store.progress
+    store.setElapsed(msg.elapsed_ms)
     store.setProgress(basePct, msg.message)
+  } else if (msg.type === 'stage_finished') {
+    store.setElapsed(msg.total_elapsed_ms)
+    store.setStageTiming({
+      stage: msg.stage,
+      elapsed_ms: msg.elapsed_ms,
+      details: msg.details ?? [],
+    })
   } else if (msg.type === 'completed') {
+    finishWallTimer()
     store.processing = false
     store.outputFiles = msg.outputs
     store.processedCount = msg.processed_count
     store.failedImages = msg.failed_images
     store.warnings = msg.warnings
+    store.elapsedMs = msg.elapsed_ms
+    store.stageTimings = msg.stage_timings
     store.setProgress(100, '处理完成')
   } else if (msg.type === 'cancelled') {
+    finishWallTimer()
     store.processing = false
     store.cancelledMessage = msg.message
     store.partialOutputs = msg.partial_outputs
     store.setProgress(store.progress, '已取消')
   } else if (msg.type === 'error') {
+    finishWallTimer()
     store.processing = false
     store.errorMessage = msg.message
   }
 }
 
 function applyCompletedResult(result: CollageResult) {
+  finishWallTimer()
   store.processing = false
   store.outputFiles = result.outputs
   store.processedCount = result.processed_count
   store.failedImages = result.failed_images
   store.warnings = result.warnings
+  store.elapsedMs = result.elapsed_ms
+  if (!store.wallElapsedMs) {
+    store.wallElapsedMs = result.wall_elapsed_ms
+  }
+  store.stageTimings = result.stage_timings
   store.setProgress(100, '处理完成')
 }
 
 async function startCollage() {
   if (!canStart.value) return
 
+  const clickedAt = performance.now()
   const s = store.settings
   const config: CollageConfig = {
     image_paths: store.selectedFiles,
     image_rotations: store.selectedImageRotations(),
+    processing_mode: s.processingMode,
     output_dir: s.outputDir,
     prefix: s.prefix || 'output',
     resample_size: s.resampleSize,
@@ -132,6 +182,7 @@ async function startCollage() {
     output_settings: {
       jpeg_quality: s.jpegQuality,
       auto_orient: s.autoOrient,
+      linear_light_resize: s.linearLightResize,
     },
     color_management: {
       enabled: s.colorManagementEnabled,
@@ -151,9 +202,9 @@ async function startCollage() {
   store.processing = true
   store.resetProgress()
   store.outputFiles = []
+  startWallTimer(clickedAt)
 
   try {
-    // 将响应式 Proxy 转为纯对象，避免 IPC 结构化克隆失败
     const plainConfig = JSON.parse(JSON.stringify(config))
     const result = await window.electronAPI.startCollage(plainConfig)
     if (store.processing && !store.cancelledMessage && !store.errorMessage) {
@@ -161,6 +212,7 @@ async function startCollage() {
     }
   } catch (err: unknown) {
     if (!store.outputFiles.length && !store.cancelledMessage) {
+      finishWallTimer()
       store.errorMessage = formatCollageError(err)
       store.processing = false
     }

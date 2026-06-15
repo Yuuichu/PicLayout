@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Cursor, Read};
 use std::path::Path;
 
 use flate2::read::ZlibDecoder;
@@ -12,7 +12,16 @@ const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 pub fn read_orientation(path: &Path) -> Option<u16> {
     let file = File::open(path).ok()?;
     let mut reader = BufReader::new(file);
-    let exif = exif::Reader::new().read_from_container(&mut reader).ok()?;
+    read_orientation_from_reader(&mut reader)
+}
+
+pub fn read_orientation_from_bytes(data: &[u8]) -> Option<u16> {
+    let mut reader = Cursor::new(data);
+    read_orientation_from_reader(&mut reader)
+}
+
+fn read_orientation_from_reader<R: std::io::BufRead + std::io::Seek>(reader: &mut R) -> Option<u16> {
+    let exif = exif::Reader::new().read_from_container(&mut *reader).ok()?;
     let field = exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)?;
     field.value.get_uint(0).map(|value| value as u16)
 }
@@ -40,6 +49,10 @@ pub fn apply_orientation(
 
 pub fn extract_icc_profile(path: &Path) -> Result<Option<Vec<u8>>, AppError> {
     let data = std::fs::read(path)?;
+    extract_icc_profile_from_bytes(&data)
+}
+
+pub fn extract_icc_profile_from_bytes(data: &[u8]) -> Result<Option<Vec<u8>>, AppError> {
     if data.starts_with(&[0xFF, 0xD8]) {
         return Ok(extract_jpeg_icc(&data));
     }
