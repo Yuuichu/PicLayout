@@ -46,25 +46,43 @@ function loadSettings(): Settings {
     if (stored) {
       const parsed = JSON.parse(stored)
       const settings = { ...defaultSettings(), ...parsed }
-      if (!parsed.processingMode) {
-        settings.processingMode = 'standard_high_quality'
-        settings.linearLightResize = false
-      } else if (parsed.processingMode === 'high_quality') {
-        settings.processingMode = 'maximum_quality'
-      } else if (parsed.processingMode === 'standard') {
-        settings.processingMode = 'standard_high_quality'
-      } else if (parsed.processingMode === 'fast') {
-        settings.processingMode = 'fast_preview'
-      }
+      normalizeQualitySettings(settings, parsed)
       return settings
     }
   } catch {}
   return defaultSettings()
 }
 
+function normalizeQualitySettings(settings: Settings, parsed: Partial<Settings> & { processingMode?: string }) {
+  const storedMode = parsed.processingMode
+  if (!storedMode) {
+    settings.processingMode = 'standard_high_quality'
+    settings.linearLightResize = false
+    return
+  }
+
+  if (storedMode === 'high_quality') {
+    settings.processingMode = 'maximum_quality'
+  } else if (storedMode === 'standard') {
+    settings.processingMode = 'standard_high_quality'
+  } else if (storedMode === 'fast') {
+    settings.processingMode = 'fast_preview'
+  }
+
+  if (settings.processingMode === 'maximum_quality' && parsed.linearLightResize === undefined) {
+    settings.linearLightResize = true
+  }
+
+  if (settings.linearLightResize) {
+    settings.processingMode = 'maximum_quality'
+  } else if (settings.processingMode === 'maximum_quality') {
+    settings.processingMode = 'standard_high_quality'
+  }
+}
+
 function defaultSettings(): Settings {
   return {
-    maxImages: 30,
+    maxImages: 40,
     resampleSize: 4000,
     borderSize: 4200,
     finalSize: 10000,
@@ -102,6 +120,7 @@ export const useAppStore = defineStore('app', () => {
   const selectedFiles = ref<string[]>([])
   const thumbnails = reactive<Record<string, string | null>>({})
   const imageSizes = reactive<Record<string, ImageSize | null>>({})
+  const imageOrientations = reactive<Record<string, number | null>>({})
   const imageRotations = reactive<Record<string, ImageRotationDegrees>>({})
 
   function setSelectedFiles(files: string[]) {
@@ -146,6 +165,10 @@ export const useAppStore = defineStore('app', () => {
     return imageRotations[path] ?? 0
   }
 
+  function getImageOrientation(path: string): number | null {
+    return imageOrientations[path] ?? null
+  }
+
   function selectedImageRotations(): Record<string, ImageRotationDegrees> {
     const rotations: Record<string, ImageRotationDegrees> = {}
     for (const path of selectedFiles.value) {
@@ -175,7 +198,17 @@ export const useAppStore = defineStore('app', () => {
   async function ensureThumbnail(path: string) {
     if (path in thumbnails) return
     thumbnails[path] = null
-    thumbnails[path] = await window.electronAPI.getThumbnail(path)
+    const [thumbnail, orientation] = await Promise.all([
+      window.electronAPI.getThumbnail(path),
+      window.electronAPI.getImageOrientation(path),
+    ])
+    thumbnails[path] = thumbnail
+    imageOrientations[path] = orientation
+  }
+
+  async function ensureImageOrientation(path: string) {
+    if (path in imageOrientations) return
+    imageOrientations[path] = await window.electronAPI.getImageOrientation(path)
   }
 
   async function ensureImageSize(path: string) {
@@ -197,6 +230,11 @@ export const useAppStore = defineStore('app', () => {
     for (const path of Object.keys(imageSizes)) {
       if (!selected.has(path)) {
         delete imageSizes[path]
+      }
+    }
+    for (const path of Object.keys(imageOrientations)) {
+      if (!selected.has(path)) {
+        delete imageOrientations[path]
       }
     }
     for (const path of Object.keys(imageRotations)) {
@@ -257,6 +295,7 @@ export const useAppStore = defineStore('app', () => {
     selectedFiles,
     thumbnails,
     imageSizes,
+    imageOrientations,
     imageRotations,
     setSelectedFiles,
     appendSelectedFiles,
@@ -264,9 +303,11 @@ export const useAppStore = defineStore('app', () => {
     swapSelectedFiles,
     rotateImage,
     getImageRotation,
+    getImageOrientation,
     selectedImageRotations,
     ensureThumbnail,
     ensureImageSize,
+    ensureImageOrientation,
     processing,
     progress,
     statusMessage,

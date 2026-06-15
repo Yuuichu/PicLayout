@@ -1,6 +1,6 @@
 {
   "name": "piclayout",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "图片拼贴排版工具",
   "main": "out/main/index.js",
   "scripts": {

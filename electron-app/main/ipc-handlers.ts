@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { readExifOrientation, sizeWithExifOrientation } from './image-metadata'
 import { rustBridge, CollageConfig, ProgressMessage } from './rust-bridge'
 
 export function registerIpcHandlers(win: BrowserWindow): void {
@@ -62,11 +63,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return img.resize(resizeOptions).toDataURL()
   })
 
+  ipcMain.handle('image:orientation', async (_event, path: string) => {
+    return readExifOrientation(path)
+  })
+
   // 读取图片尺寸，用于缩略图和水印预览
   ipcMain.handle('image:size', async (_event, path: string) => {
     const img = nativeImage.createFromPath(path)
     if (img.isEmpty()) return null
-    return img.getSize()
+    return sizeWithExifOrientation(img.getSize(), readExifOrientation(path))
   })
 
   // 启动拼贴处理

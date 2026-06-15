@@ -7,14 +7,17 @@
       <div class="form-row">
         <label>最大图片数量</label>
         <input v-model.number="s.maxImages" type="number" min="1" max="500" style="max-width:90px" @change="save" />
-        <span class="hint">默认建议 30 张以内</span>
+        <span class="hint">默认建议 40 张以内</span>
       </div>
 
       <div class="form-row">
-        <label>重采样大小</label>
+        <label>单图内容长边</label>
         <input v-model.number="s.resampleSize" type="number" min="500" max="20000" style="max-width:90px" @change="save" />
-        <span class="hint">像素（长边）</span>
+        <span class="hint">控制图片在单图边框内的最大长边</span>
       </div>
+      <p class="setting-note">
+        当前流程会直接缩放到最终输出尺寸；这里不再生成中间图，而是控制每张图在方形边框中的占比。数值越小，单张图周围留白越多。
+      </p>
 
       <div class="form-row">
         <label>单图边框大小</label>
@@ -103,10 +106,18 @@
 
       <div class="form-row">
         <label>
-          <input type="checkbox" v-model="s.linearLightResize" style="margin-right: 6px" @change="save" />
+          <input
+            type="checkbox"
+            v-model="s.linearLightResize"
+            style="margin-right: 6px"
+            @change="handleLinearLightResizeChange"
+          />
           线性光高画质缩放
         </label>
       </div>
+      <p class="setting-note">
+        线性光会先按真实亮度关系缩放再转回 sRGB，渐变和边缘更自然，但速度更慢；勾选后会自动切换到极致高画质，取消勾选会回到标准高画质。
+      </p>
     </div>
 
     <div class="card">
@@ -145,6 +156,9 @@
             <option value="relative_colorimetric">Relative Colorimetric</option>
           </select>
         </div>
+        <p class="setting-note">
+          Perceptual 会整体压缩颜色关系，适合照片和色域差异较大的转换；Relative Colorimetric 会尽量保持色域内颜色准确，超出色域的颜色会被裁切。
+        </p>
       </template>
     </div>
 
@@ -177,6 +191,15 @@ function selectColor(val: BackgroundColor) {
 function setProcessingMode(mode: ProcessingMode) {
   s.processingMode = mode
   s.linearLightResize = mode === 'maximum_quality'
+  save()
+}
+
+function handleLinearLightResizeChange() {
+  if (s.linearLightResize) {
+    s.processingMode = 'maximum_quality'
+  } else if (s.processingMode === 'maximum_quality') {
+    s.processingMode = 'standard_high_quality'
+  }
   save()
 }
 
@@ -251,6 +274,13 @@ async function selectIccProfile() {
   font-size: 11px;
   color: var(--color-text-secondary);
   line-height: 1.5;
+}
+
+.setting-note {
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
 }
 
 .icc-btn {

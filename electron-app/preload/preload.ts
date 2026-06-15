@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getThumbnail: (path: string): Promise<string | null> =>
     ipcRenderer.invoke('image:thumbnail', path),
 
+  getImageOrientation: (path: string): Promise<number | null> =>
+    ipcRenderer.invoke('image:orientation', path),
+
   getImageSize: (path: string): Promise<{ width: number; height: number } | null> =>
     ipcRenderer.invoke('image:size', path),
 
@@ -48,6 +51,7 @@ export type ElectronAPI = {
   openDirectory: () => Promise<string | null>
   openPath: (path: string) => Promise<string>
   getThumbnail: (path: string) => Promise<string | null>
+  getImageOrientation: (path: string) => Promise<number | null>
   getImageSize: (path: string) => Promise<{ width: number; height: number } | null>
   startCollage: (config: CollageConfig) => Promise<CollageResult>
   cancelCollage: () => Promise<void>

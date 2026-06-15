@@ -18,7 +18,7 @@ use crate::{
     watermark::add_watermark_to_image,
 };
 
-const RECOMMENDED_MAX_IMAGES: usize = 30;
+const RECOMMENDED_MAX_IMAGES: usize = 40;
 const HARD_MAX_IMAGES: usize = 500;
 const MAX_JPEG_DIMENSION: u32 = u16::MAX as u32;
 const MIN_WATERMARK_SCALE_PERCENT: f32 = 10.0;
@@ -190,6 +190,7 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
                         .add_color_orient(color_orient_started.elapsed().as_millis());
 
                     let resize_started = Instant::now();
+                    // Preserve the image-to-border ratio while resizing directly to the final tile.
                     let (virtual_w, virtual_h) =
                         fit_long_edge(rotated.width(), rotated.height(), config.resample_size)?;
                     let placement =

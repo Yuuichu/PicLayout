@@ -23,17 +23,19 @@
     </div>
 
     <div v-show="activeTab === 'home'" class="tab-content">
-      <FileSelector />
-
-      <div class="action-row">
-        <button
-          class="btn-primary start-btn"
-          :disabled="!canStart"
-          @click="startCollage"
-        >
-          {{ store.processing ? '处理中...' : '开始拼接' }}
-        </button>
-      </div>
+      <FileSelector>
+        <template #actions>
+          <div class="action-row">
+            <button
+              class="btn-primary start-btn"
+              :disabled="!canStart"
+              @click="startCollage"
+            >
+              {{ store.processing ? '处理中...' : '开始拼接' }}
+            </button>
+          </div>
+        </template>
+      </FileSelector>
 
       <ProgressBar />
     </div>

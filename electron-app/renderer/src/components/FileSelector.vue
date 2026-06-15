@@ -50,6 +50,8 @@
 
     <WatermarkSettings embedded />
 
+    <slot name="actions" />
+
     <div
       v-if="store.selectedFiles.length > 0"
       class="preview-frame"
@@ -287,8 +289,36 @@ function rotateImage(path: string) {
 }
 
 function thumbnailImageStyle(path: string) {
+  const manualRotation = store.getImageRotation(path)
+  if (manualRotation !== 0) {
+    return {
+      transform: `rotate(${manualRotation}deg)`,
+    }
+  }
+
   return {
-    transform: `rotate(${store.getImageRotation(path)}deg)`,
+    transform: s.autoOrient ? exifOrientationTransform(store.getImageOrientation(path)) : 'none',
+  }
+}
+
+function exifOrientationTransform(orientation: number | null): string {
+  switch (orientation) {
+    case 2:
+      return 'scaleX(-1)'
+    case 3:
+      return 'rotate(180deg)'
+    case 4:
+      return 'scaleY(-1)'
+    case 5:
+      return 'rotate(90deg) scaleX(-1)'
+    case 6:
+      return 'rotate(90deg)'
+    case 7:
+      return 'rotate(270deg) scaleX(-1)'
+    case 8:
+      return 'rotate(270deg)'
+    default:
+      return 'none'
   }
 }
 
