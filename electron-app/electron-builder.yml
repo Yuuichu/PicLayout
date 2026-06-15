@@ -12,17 +12,14 @@ extraResources:
     to: rust-core.exe
 
 files:
-  - dist/**/*
+  - out/**/*
 
 win:
   target:
     - target: nsis
       arch: x64
-  icon: build/icon.ico
 
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  installerIcon: build/icon.ico
-  uninstallerIcon: build/icon.ico
   shortcutName: PicLayout
