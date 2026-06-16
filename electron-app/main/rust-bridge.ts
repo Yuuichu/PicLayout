@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { dirname, join } from 'path'
 import { app } from 'electron'
-import { existsSync, readdirSync, statSync, unlinkSync } from 'fs'
+import { existsSync, readdirSync, unlinkSync } from 'fs'
 
 export interface CollageConfig {
   image_paths: string[]
@@ -115,11 +115,20 @@ export function getRustCorePath(): string {
   const releaseExe = join(__dirname, '../../../rust-core/target/release/rust-core.exe')
   const debugExe = join(__dirname, '../../../rust-core/target/debug/rust-core.exe')
 
-  if (existsSync(releaseExe) && existsSync(debugExe)) {
-    return statSync(debugExe).mtimeMs >= statSync(releaseExe).mtimeMs ? debugExe : releaseExe
+  if (process.env.PICLAYOUT_RUST_PROFILE === 'debug' && existsSync(debugExe)) {
+    return debugExe
   }
+
   if (existsSync(releaseExe)) return releaseExe
   return debugExe
+}
+
+function describeRustCoreBuild(exePath: string): string {
+  const normalized = exePath.replace(/\\/g, '/')
+  if (normalized.includes('/target/release/')) return 'release'
+  if (normalized.includes('/target/debug/')) return 'debug'
+  if (app.isPackaged) return 'packaged'
+  return 'unknown'
 }
 
 function getExpectedOutputPaths(config: CollageConfig): string[] {
@@ -163,6 +172,13 @@ export class RustBridge {
   ): Promise<CollageResult> {
     return new Promise((resolve, reject) => {
       const exePath = getRustCorePath()
+      const rustBuild = describeRustCoreBuild(exePath)
+      console.info(`[rust-core] using ${rustBuild} sidecar: ${exePath}`)
+      if (rustBuild === 'debug') {
+        console.warn(
+          '[rust-core] debug sidecar is much slower; build release or set PICLAYOUT_RUST_PROFILE=debug only for Rust debugging'
+        )
+      }
       const startedAt = Date.now()
       this.cancelled = false
       this.expectedOutputs = getExpectedOutputPaths(config)
