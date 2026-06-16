@@ -1,204 +1,234 @@
 <template>
   <div class="settings-panel">
-    <div class="card">
-      <p class="section-title">基础参数</p>
-
-      <div class="form-row">
-        <label>最大图片数量</label>
-        <input v-model.number="s.maxImages" type="number" min="1" max="500" style="max-width:90px" @change="save" />
-        <span class="hint">默认建议 40 张以内</span>
-      </div>
-
-      <div class="form-row">
-        <label>单图内容长边</label>
-        <input v-model.number="s.resampleSize" type="number" min="500" max="20000" style="max-width:90px" @change="save" />
-        <span class="hint">图片在单个 tile 内的最大长边</span>
-      </div>
-
-      <div class="form-row">
-        <label>单图边框宽度</label>
-        <input v-model.number="s.tileBorderPx" type="number" min="0" max="10000" style="max-width:90px" @change="save" />
-        <span class="hint">tile 边长 = 内容长边 + 2 倍边框</span>
-      </div>
-
-      <div class="form-row">
-        <label>横向图片间隔</label>
-        <input v-model.number="s.gapXPx" type="number" min="0" max="20000" style="max-width:90px" @change="save" />
-        <span class="hint">按布局像素设置，导出时随最终尺寸缩放</span>
-      </div>
-
-      <div class="form-row">
-        <label>纵向图片间隔</label>
-        <input v-model.number="s.gapYPx" type="number" min="0" max="20000" style="max-width:90px" @change="save" />
-        <span class="hint">按布局像素设置，导出时随最终尺寸缩放</span>
-      </div>
-
-      <div class="form-row">
-        <label>最终外边距</label>
-        <div class="segmented-control">
-          <button type="button" :class="{ active: s.outerBorderMode === 'auto' }" @click="setOuterBorderMode('auto')">
-            自动
-          </button>
-          <button type="button" :class="{ active: s.outerBorderMode === 'custom' }" @click="setOuterBorderMode('custom')">
-            自定义
-          </button>
-        </div>
-        <input
-          v-if="s.outerBorderMode === 'custom'"
-          v-model.number="s.outerBorderPx"
-          type="number"
-          min="0"
-          max="30000"
-          style="max-width:90px"
-          @change="save"
-        />
-        <span class="hint">最终导出画布像素</span>
-      </div>
-
-      <div class="form-row">
-        <label>最终图像大小</label>
-        <input v-model.number="s.finalSize" type="number" min="1000" max="30000" style="max-width:90px" @change="save" />
-        <span class="hint">像素，长边</span>
-      </div>
-
-      <div class="form-row">
-        <label>图像 DPI</label>
-        <select v-model.number="s.dpi" style="max-width:100px" @change="save">
-          <option :value="72">72</option>
-          <option :value="150">150</option>
-          <option :value="300">300</option>
-          <option :value="600">600</option>
-        </select>
-        <span class="hint">每英寸点数</span>
-      </div>
-
-      <div class="form-row">
-        <label>背景颜色</label>
-        <div class="color-selector">
-          <div
-            v-for="opt in colorOptions"
-            :key="opt.value"
-            class="color-swatch"
-            :class="{ active: s.backgroundColor === opt.value }"
-            :style="{ background: opt.hex }"
-            :title="opt.label"
-            @click="selectColor(opt.value)"
-          />
-        </div>
-        <span class="hint">{{ currentColorLabel }}</span>
-      </div>
-
-      <p class="memory-tip">高分辨率参数和大量图片会显著增加内存占用；如处理失败，请降低图片数量或尺寸参数。</p>
+    <div class="tool-tabs" role="tablist" aria-label="工具面板">
+      <button
+        v-for="tool in tools"
+        :key="tool.id"
+        class="tool-tab"
+        :class="{ active: activeTool === tool.id }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTool === tool.id"
+        @click="activeTool = tool.id"
+      >
+        <component :is="tool.icon" :size="15" />
+        {{ tool.label }}
+      </button>
     </div>
 
-    <div class="card">
-      <p class="section-title">输出质量</p>
+    <div class="tool-body">
+      <section v-if="activeTool === 'layout'" class="tool-section">
+        <p class="section-title">Layout</p>
 
-      <div class="form-row">
-        <label>质量模式</label>
-        <div class="segmented-control">
-          <button
-            type="button"
-            :class="{ active: s.processingMode === 'standard_high_quality' }"
-            @click="setProcessingMode('standard_high_quality')"
-          >
-            标准高画质
-          </button>
-          <button
-            type="button"
-            :class="{ active: s.processingMode === 'maximum_quality' }"
-            @click="setProcessingMode('maximum_quality')"
-          >
-            极致高画质
-          </button>
-          <button
-            type="button"
-            :class="{ active: s.processingMode === 'fast_preview' }"
-            @click="setProcessingMode('fast_preview')"
-          >
-            快速预览
-          </button>
+        <div class="field-grid">
+          <label class="compact-field">
+            <span>最大图片</span>
+            <input v-model.number="s.maxImages" type="number" min="1" max="500" @change="save" />
+          </label>
+
+          <label class="compact-field">
+            <span>内容长边</span>
+            <input v-model.number="s.resampleSize" type="number" min="500" max="20000" @change="save" />
+          </label>
+
+          <label class="compact-field">
+            <span>单图边框</span>
+            <input v-model.number="s.tileBorderPx" type="number" min="0" max="10000" @change="save" />
+          </label>
+
+          <label class="compact-field">
+            <span>横向间隔</span>
+            <input v-model.number="s.gapXPx" type="number" min="0" max="20000" @change="save" />
+          </label>
+
+          <label class="compact-field">
+            <span>纵向间隔</span>
+            <input v-model.number="s.gapYPx" type="number" min="0" max="20000" @change="save" />
+          </label>
+
+          <label class="compact-field">
+            <span>最终长边</span>
+            <input v-model.number="s.finalSize" type="number" min="1000" max="30000" @change="save" />
+          </label>
         </div>
-      </div>
 
-      <div class="form-row">
-        <label>JPEG 质量</label>
-        <input v-model.number="s.jpegQuality" type="number" min="1" max="100" style="max-width:90px" @change="save" />
-        <span class="hint">默认 95</span>
-      </div>
-
-      <div class="form-row">
-        <label>
-          <input type="checkbox" v-model="s.autoOrient" style="margin-right: 6px" @change="save" />
-          EXIF 自动旋正
-        </label>
-      </div>
-
-      <div class="form-row">
-        <label>
+        <div class="stacked-field">
+          <span>最终外边距</span>
+          <div class="segmented-control">
+            <button type="button" :class="{ active: s.outerBorderMode === 'auto' }" @click="setOuterBorderMode('auto')">
+              自动
+            </button>
+            <button type="button" :class="{ active: s.outerBorderMode === 'custom' }" @click="setOuterBorderMode('custom')">
+              自定义
+            </button>
+          </div>
           <input
-            type="checkbox"
-            v-model="s.linearLightResize"
-            style="margin-right: 6px"
-            @change="handleLinearLightResizeChange"
+            v-if="s.outerBorderMode === 'custom'"
+            v-model.number="s.outerBorderPx"
+            type="number"
+            min="0"
+            max="30000"
+            @change="save"
           />
-          线性光高画质缩放
+        </div>
+
+        <p class="setting-note">高分辨率和大量图片会增加内存占用；如果处理失败，优先降低图片数量或最终尺寸。</p>
+      </section>
+
+      <section v-else-if="activeTool === 'output'" class="tool-section">
+        <p class="section-title">Output</p>
+
+        <div class="stacked-field">
+          <span>质量模式</span>
+          <div class="segmented-control vertical">
+            <button
+              type="button"
+              :class="{ active: s.processingMode === 'standard_high_quality' }"
+              @click="setProcessingMode('standard_high_quality')"
+            >
+              标准高画质
+            </button>
+            <button
+              type="button"
+              :class="{ active: s.processingMode === 'maximum_quality' }"
+              @click="setProcessingMode('maximum_quality')"
+            >
+              极致高画质
+            </button>
+            <button
+              type="button"
+              :class="{ active: s.processingMode === 'fast_preview' }"
+              @click="setProcessingMode('fast_preview')"
+            >
+              快速预览
+            </button>
+          </div>
+        </div>
+
+        <div class="field-grid">
+          <label class="compact-field">
+            <span>JPEG 质量</span>
+            <input v-model.number="s.jpegQuality" type="number" min="1" max="100" @change="save" />
+          </label>
+
+          <label class="compact-field">
+            <span>DPI</span>
+            <select v-model.number="s.dpi" @change="save">
+              <option :value="72">72</option>
+              <option :value="150">150</option>
+              <option :value="300">300</option>
+              <option :value="600">600</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="toggle-row">
+          <input type="checkbox" v-model="s.autoOrient" @change="save" />
+          <span>EXIF 自动旋正</span>
         </label>
-      </div>
-      <p class="setting-note">
-        线性光会先按真实亮度关系缩放再转回 sRGB，渐变和边缘更自然，但速度更慢；勾选后会自动切换到极致高画质。
-      </p>
-    </div>
 
-    <div class="card">
-      <p class="section-title">色彩管理</p>
-
-      <div class="form-row">
-        <label>
-          <input type="checkbox" v-model="s.colorManagementEnabled" style="margin-right: 6px" @change="save" />
-          启用 ICC 转换
+        <label class="toggle-row">
+          <input type="checkbox" v-model="s.linearLightResize" @change="handleLinearLightResizeChange" />
+          <span>线性光高画质缩放</span>
         </label>
-      </div>
+      </section>
 
-      <template v-if="s.colorManagementEnabled">
-        <div class="form-row">
-          <label>目标 Profile</label>
-          <select v-model="s.targetProfileMode" style="max-width:120px" @change="save">
-            <option value="srgb">sRGB</option>
-            <option value="custom">自定义 ICC</option>
-          </select>
+      <section v-else-if="activeTool === 'color'" class="tool-section">
+        <p class="section-title">Color</p>
+
+        <div class="stacked-field">
+          <span>背景颜色</span>
+          <div class="color-selector">
+            <button
+              v-for="opt in colorOptions"
+              :key="opt.value"
+              class="color-swatch"
+              :class="{ active: s.backgroundColor === opt.value }"
+              :style="{ background: opt.hex }"
+              :title="opt.label"
+              type="button"
+              @click="selectColor(opt.value)"
+            />
+          </div>
+          <em>{{ currentColorLabel }}</em>
+        </div>
+
+        <label class="toggle-row">
+          <input type="checkbox" v-model="s.colorManagementEnabled" @change="save" />
+          <span>启用 ICC 转换</span>
+        </label>
+
+        <template v-if="s.colorManagementEnabled">
+          <label class="compact-field full-field">
+            <span>目标 Profile</span>
+            <select v-model="s.targetProfileMode" @change="save">
+              <option value="srgb">sRGB</option>
+              <option value="custom">自定义 ICC</option>
+            </select>
+          </label>
+
           <button
             v-if="s.targetProfileMode === 'custom'"
-            class="btn-secondary icc-btn"
+            class="quiet-button"
+            type="button"
             @click="selectIccProfile"
           >
             选择 ICC
           </button>
-          <span v-if="s.targetProfileMode === 'custom'" class="hint icc-name" :title="s.targetProfilePath">
+          <p v-if="s.targetProfileMode === 'custom'" class="path-note" :title="s.targetProfilePath">
             {{ iccBasename || '未选择' }}
-          </span>
-        </div>
+          </p>
 
-        <div class="form-row">
-          <label>渲染意图</label>
-          <select v-model="s.renderingIntent" style="max-width:170px" @change="save">
-            <option value="perceptual">Perceptual</option>
-            <option value="relative_colorimetric">Relative Colorimetric</option>
-          </select>
-        </div>
-      </template>
+          <label class="compact-field full-field">
+            <span>渲染意图</span>
+            <select v-model="s.renderingIntent" @change="save">
+              <option value="perceptual">Perceptual</option>
+              <option value="relative_colorimetric">Relative Colorimetric</option>
+            </select>
+          </label>
+        </template>
+      </section>
+
+      <section v-else-if="activeTool === 'watermark'" class="tool-section">
+        <WatermarkSettings embedded />
+      </section>
+
+      <section v-else-if="activeTool === 'text'" class="tool-section">
+        <TextBlockSettings embedded />
+      </section>
+
+      <section v-else class="tool-section">
+        <p class="section-title">Activity</p>
+        <ProgressBar variant="panel" />
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { Activity, Droplets, FileOutput, LayoutGrid, Palette, Type } from 'lucide-vue-next'
 import { useAppStore } from '../stores/appStore'
 import { BACKGROUND_COLOR_OPTIONS, type BackgroundColor, type ProcessingMode } from '../types/protocol'
+import ProgressBar from './ProgressBar.vue'
+import TextBlockSettings from './TextBlockSettings.vue'
+import WatermarkSettings from './WatermarkSettings.vue'
+
+type ToolId = 'layout' | 'output' | 'color' | 'watermark' | 'text' | 'activity'
+
+const tools: { id: ToolId; label: string; icon: unknown }[] = [
+  { id: 'layout', label: 'Layout', icon: LayoutGrid },
+  { id: 'output', label: 'Output', icon: FileOutput },
+  { id: 'color', label: 'Color', icon: Palette },
+  { id: 'watermark', label: 'Watermark', icon: Droplets },
+  { id: 'text', label: 'Text', icon: Type },
+  { id: 'activity', label: 'Activity', icon: Activity },
+]
 
 const store = useAppStore()
 const s = store.settings
 const colorOptions = BACKGROUND_COLOR_OPTIONS
+const activeTool = ref<ToolId>('layout')
 
 const currentColorLabel = computed(
   () => colorOptions.find((o) => o.value === s.backgroundColor)?.label ?? ''
@@ -248,78 +278,166 @@ async function selectIccProfile() {
 
 <style scoped>
 .settings-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
 }
 
-.color-selector {
+.tool-tabs {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-panel-deep);
+}
+
+.tool-tab {
+  width: 43px;
+  height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.tool-tab.active {
+  background: var(--color-panel);
+  color: var(--color-text);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.tool-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.compact-field,
+.stacked-field {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+}
+
+.compact-field span,
+.stacked-field > span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.full-field {
+  width: 100%;
 }
 
 .segmented-control {
   display: inline-flex;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
   overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+}
+
+.segmented-control.vertical {
+  flex-direction: column;
 }
 
 .segmented-control button {
+  min-height: 28px;
+  flex: 1;
   border: 0;
   border-right: 1px solid var(--color-border);
-  background: #f7f7f7;
-  color: var(--color-text);
-  padding: 6px 12px;
-  cursor: pointer;
+  border-radius: 0;
+  background: var(--color-control);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.segmented-control.vertical button {
+  border-right: 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .segmented-control button:last-child {
   border-right: 0;
+  border-bottom: 0;
 }
 
 .segmented-control button.active {
-  background: var(--color-primary);
-  color: white;
+  background: var(--color-control-active);
+  color: var(--color-text);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.color-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 .color-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  border: 2px solid var(--color-border);
-  cursor: pointer;
-  transition: transform 0.1s, border-color 0.1s;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--color-panel);
 }
 
 .color-swatch.active {
-  border-color: var(--color-primary);
-  transform: scale(1.2);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
-.color-swatch:hover:not(.active) {
-  border-color: #999;
-}
-
-.memory-tip,
+.stacked-field em,
+.path-note,
 .setting-note {
-  font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-subtle);
+  font-size: 11px;
+  font-style: normal;
   line-height: 1.45;
 }
 
-.setting-note {
-  margin-top: -4px;
-}
-
-.icc-btn {
-  width: auto;
-  padding: 5px 10px;
-  font-size: 12px;
-}
-
-.icc-name {
+.path-note {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quiet-button {
+  height: 30px;
+  border: 1px solid var(--color-border);
+  background: var(--color-control);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 650;
 }
 </style>

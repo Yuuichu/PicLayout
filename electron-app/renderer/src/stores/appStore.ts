@@ -14,6 +14,7 @@ import type {
 
 // 用户设置（持久化到 localStorage）
 const SETTINGS_KEY = 'piclayout_settings'
+const UI_KEY = 'piclayout_ui'
 
 interface ImageSize {
   width: number
@@ -48,6 +49,13 @@ interface Settings {
   textBlock: TextBlockConfig
 }
 
+type AppTheme = 'dark' | 'light'
+
+interface UiState {
+  theme: AppTheme
+  filmstripCollapsed: boolean
+}
+
 function loadSettings(): Settings {
   try {
     const stored = localStorage.getItem(SETTINGS_KEY)
@@ -66,6 +74,23 @@ function loadSettings(): Settings {
     }
   } catch {}
   return defaultSettings()
+}
+
+function loadUiState(): UiState {
+  try {
+    const stored = localStorage.getItem(UI_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored) as Partial<UiState>
+      return {
+        theme: parsed.theme === 'light' ? 'light' : 'dark',
+        filmstripCollapsed: !!parsed.filmstripCollapsed,
+      }
+    }
+  } catch {}
+  return {
+    theme: 'dark',
+    filmstripCollapsed: false,
+  }
 }
 
 function normalizeQualitySettings(settings: Settings, parsed: Partial<Settings> & { processingMode?: string }) {
@@ -160,10 +185,25 @@ function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings>) 
 export const useAppStore = defineStore('app', () => {
   // 设置
   const settings = reactive<Settings>(loadSettings())
+  const ui = reactive<UiState>(loadUiState())
 
   function saveSettings() {
     settings.borderSize = settings.resampleSize + settings.tileBorderPx * 2
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  }
+
+  function saveUiState() {
+    localStorage.setItem(UI_KEY, JSON.stringify(ui))
+  }
+
+  function toggleTheme() {
+    ui.theme = ui.theme === 'dark' ? 'light' : 'dark'
+    saveUiState()
+  }
+
+  function setFilmstripCollapsed(collapsed: boolean) {
+    ui.filmstripCollapsed = collapsed
+    saveUiState()
   }
 
   // 已选图片
@@ -341,7 +381,10 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     settings,
+    ui,
     saveSettings,
+    toggleTheme,
+    setFilmstripCollapsed,
     selectedFiles,
     thumbnails,
     imageSizes,

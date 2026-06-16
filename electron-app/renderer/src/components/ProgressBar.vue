@@ -1,7 +1,8 @@
 <template>
   <div
-    v-if="store.processing || store.outputFiles.length > 0 || store.cancelledMessage || store.errorMessage"
+    v-if="hasActivity"
     class="progress-area"
+    :class="`variant-${variant}`"
   >
     <div v-if="store.processing" class="card progress-card">
       <div class="status-row">
@@ -70,11 +71,22 @@
       <p class="error-msg">{{ store.errorMessage }}</p>
     </div>
   </div>
+
+  <div v-else class="activity-empty">
+    <p>暂无处理记录</p>
+    <span>开始导出后，这里会显示阶段进度、耗时、输出文件和错误信息。</span>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
+
+const props = withDefaults(defineProps<{
+  variant?: 'panel'
+}>(), {
+  variant: 'panel',
+})
 
 const store = useAppStore()
 
@@ -101,6 +113,12 @@ const visibleTimings = computed(() =>
       .map((detail) => `${detailLabels[detail.name] ?? detail.name} ${formatMs(detail.elapsed_ms)}`)
       .join(' / '),
   }))
+)
+
+const variant = computed(() => props.variant)
+
+const hasActivity = computed(
+  () => store.processing || store.outputFiles.length > 0 || !!store.cancelledMessage || !!store.errorMessage
 )
 
 function basename(path: string): string {
@@ -132,89 +150,108 @@ async function openOutputDir() {
 
 <style scoped>
 .progress-area {
-  margin-top: 8px;
-}
-
-.progress-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+.progress-card,
+.result-card,
+.cancelled-card,
+.error-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-panel-raised);
 }
 
 .status-row {
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
-  gap: 12px;
-  align-items: center;
+  gap: 4px;
+  align-items: flex-start;
 }
 
 .status-text {
-  font-size: 13px;
-  color: var(--color-text-secondary);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .time-text,
 .progress-pct {
-  font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
+  font-size: 11px;
   text-align: right;
 }
 
 .progress-track {
-  height: 8px;
+  height: 4px;
   background: var(--color-border);
-  border-radius: 4px;
+  border-radius: 999px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: var(--color-primary);
-  border-radius: 4px;
+  background: var(--color-accent);
+  border-radius: 999px;
   transition: width 0.3s ease;
+}
+
+.progress-pct {
+  align-self: flex-end;
 }
 
 .stage-timings {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px 10px;
   font-size: 11px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-subtle);
 }
 
 .cancel-btn {
   align-self: flex-end;
-  padding: 4px 12px;
+  padding: 4px 10px;
   font-size: 12px;
 }
 
 .result-card {
-  background: #e8f5e9;
+  border-left: 2px solid var(--color-success);
 }
 
 .result-title {
   font-weight: 700;
   color: var(--color-success);
-  margin-bottom: 4px;
 }
 
 .result-summary {
   font-size: 12px;
-  color: var(--color-text-secondary);
-  margin-bottom: 8px;
+  color: var(--color-text-muted);
 }
 
 .output-list {
   list-style: none;
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.output-list li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .open-dir-btn {
-  margin-top: 8px;
   padding: 5px 12px;
   font-size: 12px;
 }
@@ -227,16 +264,15 @@ async function openOutputDir() {
 
 .warning-list,
 .failed-list {
-  margin-top: 8px;
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
 .warning-list {
-  color: #8a5a00;
+  color: var(--color-warning);
 }
 
 .failed-title {
@@ -245,7 +281,7 @@ async function openOutputDir() {
 }
 
 .cancelled-card {
-  background: #fff8e1;
+  border-left: 2px solid var(--color-warning);
 }
 
 .cancelled-title {
@@ -256,11 +292,11 @@ async function openOutputDir() {
 
 .cancelled-msg {
   font-size: 12px;
-  color: #8a5a00;
+  color: var(--color-text-muted);
 }
 
 .error-card {
-  background: #ffebee;
+  border-left: 2px solid var(--color-danger);
 }
 
 .error-title {
@@ -271,6 +307,28 @@ async function openOutputDir() {
 
 .error-msg {
   font-size: 12px;
-  color: #b71c1c;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.activity-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-subtle);
+}
+
+.activity-empty p {
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.activity-empty span {
+  font-size: 11px;
+  line-height: 1.5;
 }
 </style>

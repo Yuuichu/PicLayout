@@ -128,14 +128,13 @@ function save() {
 .watermark-settings {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .watermark-settings.embedded {
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-bg);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .watermark-header {
@@ -155,53 +154,57 @@ function save() {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-text);
 }
 
 .watermark-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
 .compact-row {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 6px;
   margin: 0;
 }
 
+.compact-row label {
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .watermark-btn {
-  width: auto;
-  padding: 5px 10px;
+  width: 100%;
   font-size: 12px;
 }
 
 .file-name {
-  max-width: 180px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .range-input {
-  width: 140px;
+  width: 100%;
 }
 
 .number-input {
-  max-width: 64px;
+  max-width: 86px;
 }
 
 .tip {
   font-size: 11px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-subtle);
   margin-top: 0;
 }
 
 @media (max-width: 760px) {
-  .watermark-header,
-  .watermark-grid {
-    grid-template-columns: 1fr;
-  }
-
   .watermark-header {
     align-items: flex-start;
     flex-direction: column;

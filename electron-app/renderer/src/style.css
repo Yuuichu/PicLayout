@@ -5,147 +5,210 @@
 }
 
 :root {
-  --color-primary: #2196f3;
-  --color-success: #4caf50;
-  --color-danger: #f44336;
-  --color-warning: #ff9800;
-  --color-bg: #f5f5f5;
-  --color-surface: #ffffff;
-  --color-border: #e0e0e0;
-  --color-text: #212121;
-  --color-text-secondary: #757575;
-  --radius: 8px;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --color-bg: #101112;
+  --color-toolbar: #151618;
+  --color-panel: #18191b;
+  --color-panel-deep: #121315;
+  --color-panel-raised: #202123;
+  --color-viewer-bg: #0b0c0d;
+  --color-control: #242527;
+  --color-control-hover: #2c2d30;
+  --color-control-active: #333437;
+  --color-border: #2d2e31;
+  --color-border-strong: #434447;
+  --color-canvas-border: #57585b;
+  --color-text: #eeeeec;
+  --color-text-muted: #aaa7a0;
+  --color-text-subtle: #74716b;
+  --color-accent: #d7d1c4;
+  --color-accent-text: #111111;
+  --color-success: #8cae82;
+  --color-danger: #e0756d;
+  --color-warning: #c9a66b;
+  --viewer-grid-line: rgba(255, 255, 255, 0.025);
+  --shadow-canvas: 0 22px 55px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --radius: 5px;
+}
+
+[data-theme="light"] {
+  --color-bg: #e9e8e4;
+  --color-toolbar: #f4f3ef;
+  --color-panel: #efeee9;
+  --color-panel-deep: #e3e1db;
+  --color-panel-raised: #f8f7f3;
+  --color-viewer-bg: #dad8d1;
+  --color-control: #ffffff;
+  --color-control-hover: #f0eee8;
+  --color-control-active: #e5e2da;
+  --color-border: #cfccc3;
+  --color-border-strong: #aaa69c;
+  --color-canvas-border: #9d9990;
+  --color-text: #1f201f;
+  --color-text-muted: #5f5d58;
+  --color-text-subtle: #8a867e;
+  --color-accent: #1f201f;
+  --color-accent-text: #ffffff;
+  --color-success: #4f7d48;
+  --color-danger: #ad4f48;
+  --color-warning: #87632d;
+  --viewer-grid-line: rgba(0, 0, 0, 0.035);
+  --shadow-canvas: 0 22px 55px rgba(55, 50, 42, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
 }
 
 body {
-  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-family: "Inter", "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 button {
   cursor: pointer;
   border: none;
   border-radius: var(--radius);
-  padding: 8px 16px;
-  font-size: 14px;
-  font-family: inherit;
-  transition: opacity 0.2s, background 0.2s;
+  padding: 7px 11px;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+button svg {
+  flex: 0 0 auto;
 }
 
 button:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
+  opacity: 0.45;
 }
 
 button:not(:disabled):hover {
-  opacity: 0.9;
+  background: var(--color-control-hover);
 }
 
 input[type="text"],
 input[type="number"],
-select {
+select,
+textarea {
   width: 100%;
-  padding: 6px 10px;
+  min-height: 30px;
+  padding: 5px 8px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: inherit;
-  background: var(--color-surface);
-  color: var(--color-text);
+  border-radius: var(--radius);
   outline: none;
-  transition: border-color 0.2s;
+  background: var(--color-control);
+  color: var(--color-text);
+  font-size: 12px;
+  transition: border-color 0.16s ease, background 0.16s ease;
 }
 
-input:focus,
-select:focus {
-  border-color: var(--color-primary);
+textarea {
+  min-height: 72px;
+  resize: vertical;
 }
 
-.tabs {
-  display: flex;
-  border-bottom: 2px solid var(--color-border);
-  background: var(--color-surface);
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-accent);
 }
 
-.tab-btn {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 10px 24px;
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  margin-bottom: -2px;
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
+input[type="checkbox"] {
+  accent-color: var(--color-accent);
 }
 
-.tab-btn.active {
-  color: var(--color-primary);
-  border-bottom-color: var(--color-primary);
-  font-weight: 600;
+input[type="range"] {
+  accent-color: var(--color-accent);
 }
 
 .card {
-  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 16px;
+  background: var(--color-panel-raised);
+  padding: 12px;
+}
+
+.section-title {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .form-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .form-row label {
-  min-width: 120px;
-  color: var(--color-text-secondary);
-  font-size: 13px;
+  min-width: 92px;
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
 
 .form-row .hint {
+  color: var(--color-text-subtle);
   font-size: 11px;
-  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
-.btn-primary {
-  background: var(--color-primary);
-  color: white;
-  font-weight: 600;
+.btn-primary,
+.btn-success,
+.btn-secondary,
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid var(--color-border);
+  background: var(--color-control);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 650;
 }
 
+.btn-primary,
 .btn-success {
-  background: var(--color-success);
-  color: white;
-  font-weight: 600;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .btn-danger {
-  background: var(--color-danger);
-  color: white;
+  color: var(--color-danger);
 }
 
-.btn-secondary {
-  background: var(--color-border);
-  color: var(--color-text);
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-.section-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 12px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--color-border);
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-subtle), transparent 40%);
+  background-clip: padding-box;
 }

@@ -183,14 +183,13 @@ function save() {
 .text-block-settings {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .text-block-settings.embedded {
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-bg);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .text-block-header {
@@ -210,22 +209,32 @@ function save() {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-text);
 }
 
 .text-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
 .wide-row {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .compact-row {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 6px;
   margin: 0;
+}
+
+.compact-row label {
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .text-input {
@@ -234,38 +243,29 @@ function save() {
 }
 
 .font-select {
-  max-width: 220px;
+  max-width: none;
 }
 
 .small-select {
-  max-width: 110px;
+  max-width: none;
 }
 
 .number-input {
-  max-width: 72px;
+  max-width: 92px;
 }
 
 .alpha-input {
-  max-width: 58px;
+  max-width: 72px;
 }
 
 .range-input {
-  width: 140px;
+  width: 100%;
 }
 
 @media (max-width: 760px) {
-  .text-block-header,
-  .text-grid {
-    grid-template-columns: 1fr;
-  }
-
   .text-block-header {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .wide-row {
-    grid-column: auto;
   }
 }
 </style>
