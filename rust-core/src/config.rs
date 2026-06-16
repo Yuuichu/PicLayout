@@ -16,6 +16,14 @@ pub struct CollageConfig {
     pub resample_size: u32,
     #[serde(default = "default_border_size")]
     pub border_size: u32,
+    #[serde(default)]
+    pub tile_border_px: Option<u32>,
+    #[serde(default)]
+    pub gap_x_px: u32,
+    #[serde(default)]
+    pub gap_y_px: u32,
+    #[serde(default)]
+    pub outer_border_px: Option<u32>,
     #[serde(default = "default_final_size")]
     pub final_size: u32,
     #[serde(default = "default_dpi")]
@@ -23,6 +31,7 @@ pub struct CollageConfig {
     #[serde(default)]
     pub background_color: BackgroundColor,
     pub watermark: Option<WatermarkConfig>,
+    pub text_block: Option<TextBlockConfig>,
     #[serde(default)]
     pub overwrite: bool,
     #[serde(default)]
@@ -44,6 +53,25 @@ impl CollageConfig {
         self.output_settings
             .linear_light_resize
             .unwrap_or_else(|| self.processing_mode.default_linear_light_resize())
+    }
+
+    pub fn tile_size(&self) -> Option<u32> {
+        match self.tile_border_px {
+            Some(border) => border
+                .checked_mul(2)
+                .and_then(|padding| self.resample_size.checked_add(padding)),
+            None => Some(self.border_size),
+        }
+    }
+
+    pub fn has_text_block(&self) -> bool {
+        self.text_block
+            .as_ref()
+            .is_some_and(|block| !block.text.trim().is_empty())
+    }
+
+    pub fn has_overlay(&self) -> bool {
+        self.watermark.is_some() || self.has_text_block()
     }
 }
 
@@ -107,6 +135,53 @@ pub struct WatermarkConfig {
     pub position_x_percent: f32,
     #[serde(default = "default_watermark_y")]
     pub position_y_percent: f32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TextBlockConfig {
+    pub text: String,
+    #[serde(default = "default_text_font_family")]
+    pub font_family: String,
+    #[serde(default = "default_text_font_weight")]
+    pub font_weight: u16,
+    #[serde(default)]
+    pub font_style: TextFontStyle,
+    #[serde(default = "default_text_font_size")]
+    pub font_size_px: f32,
+    #[serde(default = "default_text_line_height")]
+    pub line_height_px: f32,
+    #[serde(default = "default_text_max_width")]
+    pub max_width_percent: f32,
+    #[serde(default)]
+    pub align: TextAlign,
+    #[serde(default = "default_text_rgba")]
+    pub text_rgba: [u8; 4],
+    #[serde(default = "default_text_background_rgba")]
+    pub background_rgba: [u8; 4],
+    #[serde(default)]
+    pub padding_px: u32,
+    #[serde(default = "default_text_x")]
+    pub position_x_percent: f32,
+    #[serde(default = "default_text_y")]
+    pub position_y_percent: f32,
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TextFontStyle {
+    #[default]
+    Normal,
+    Italic,
+    Oblique,
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Debug, Deserialize)]
@@ -187,6 +262,33 @@ fn default_watermark_x() -> f32 {
 }
 fn default_watermark_y() -> f32 {
     95.0
+}
+fn default_text_font_family() -> String {
+    "sans-serif".into()
+}
+fn default_text_font_weight() -> u16 {
+    400
+}
+fn default_text_font_size() -> f32 {
+    120.0
+}
+fn default_text_line_height() -> f32 {
+    144.0
+}
+fn default_text_max_width() -> f32 {
+    60.0
+}
+fn default_text_rgba() -> [u8; 4] {
+    [255, 255, 255, 255]
+}
+fn default_text_background_rgba() -> [u8; 4] {
+    [0, 0, 0, 0]
+}
+fn default_text_x() -> f32 {
+    50.0
+}
+fn default_text_y() -> f32 {
+    92.0
 }
 fn default_jpeg_quality() -> u8 {
     95
@@ -271,5 +373,32 @@ mod tests {
         assert_eq!(high_quality.processing_mode, ProcessingMode::MaximumQuality);
         assert_eq!(standard.processing_mode, ProcessingMode::StandardHighQuality);
         assert_eq!(fast.processing_mode, ProcessingMode::FastPreview);
+    }
+
+    #[test]
+    fn tile_size_uses_legacy_border_size_when_tile_border_missing() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "resample_size": 4000,
+            "border_size": 4200
+        }));
+
+        assert_eq!(config.tile_size(), Some(4200));
+    }
+
+    #[test]
+    fn tile_size_uses_explicit_tile_border_when_present() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "resample_size": 4000,
+            "border_size": 4200,
+            "tile_border_px": 250
+        }));
+
+        assert_eq!(config.tile_size(), Some(4500));
     }
 }

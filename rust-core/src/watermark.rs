@@ -59,13 +59,13 @@ pub fn add_watermark_to_image(
     let mut canvas = base.to_rgba8();
     let wm_rgba = wm_scaled.to_rgba8();
 
-    composite_visible_watermark(&mut canvas, &wm_rgba, x, y);
+    composite_visible_overlay(&mut canvas, &wm_rgba, x, y);
 
     Ok((DynamicImage::ImageRgba8(canvas), warnings))
 }
 
 /// Alpha 合成（Porter-Duff "over" 操作）
-fn alpha_composite(base: Rgba<u8>, overlay: Rgba<u8>) -> Rgba<u8> {
+pub fn alpha_composite(base: Rgba<u8>, overlay: Rgba<u8>) -> Rgba<u8> {
     let alpha_o = overlay[3] as f32 / 255.0;
     let alpha_b = base[3] as f32 / 255.0;
     let alpha_out = alpha_o + alpha_b * (1.0 - alpha_o);
@@ -89,11 +89,16 @@ fn alpha_composite(base: Rgba<u8>, overlay: Rgba<u8>) -> Rgba<u8> {
     ])
 }
 
-fn composite_visible_watermark(canvas: &mut image::RgbaImage, watermark: &image::RgbaImage, x: i64, y: i64) {
+pub fn composite_visible_overlay(
+    canvas: &mut image::RgbaImage,
+    overlay_image: &image::RgbaImage,
+    x: i64,
+    y: i64,
+) {
     let img_w = canvas.width() as i64;
     let img_h = canvas.height() as i64;
-    let wm_w = watermark.width() as i64;
-    let wm_h = watermark.height() as i64;
+    let wm_w = overlay_image.width() as i64;
+    let wm_h = overlay_image.height() as i64;
 
     let start_x = x.max(0);
     let start_y = y.max(0);
@@ -104,8 +109,8 @@ fn composite_visible_watermark(canvas: &mut image::RgbaImage, watermark: &image:
     }
 
     let row_bytes = canvas.width() as usize * 4;
-    let wm_row_bytes = watermark.width() as usize * 4;
-    let wm_raw = watermark.as_raw();
+    let wm_row_bytes = overlay_image.width() as usize * 4;
+    let wm_raw = overlay_image.as_raw();
     canvas
         .as_mut()
         .par_chunks_mut(row_bytes)

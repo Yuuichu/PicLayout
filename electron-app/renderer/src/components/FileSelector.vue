@@ -43,26 +43,27 @@
       >
         清空
       </button>
-      <span class="file-count">
-        {{ fileCountText }}
-      </span>
+      <span class="file-count">{{ fileCountText }}</span>
     </div>
 
     <WatermarkSettings embedded />
+    <TextBlockSettings embedded />
 
     <slot name="actions" />
 
     <div
       v-if="store.selectedFiles.length > 0"
+      ref="previewFrameRef"
       class="preview-frame"
       :style="previewFrameStyle"
     >
       <div class="collage-preview" :style="thumbGridStyle">
         <div
           v-for="(f, i) in store.selectedFiles"
-          :key="i"
+          :key="f"
           class="thumb-tile"
           :class="{ dragging: draggedIndex === i, dropTarget: draggedIndex !== null && draggedIndex !== i }"
+          :style="thumbTileStyle(i)"
           :title="f"
           draggable="true"
           @dragstart="onDragStart(i)"
@@ -87,7 +88,7 @@
               class="tool-btn rotate-btn"
               :disabled="processing"
               :aria-label="`旋转 ${basename(f)}`"
-              :title="`顺时针旋转 90°，当前 ${store.getImageRotation(f)}°`"
+              :title="`顺时针旋转 90 度，当前 ${store.getImageRotation(f)} 度`"
               @click.stop="rotateImage(f)"
             >
               ↻
@@ -128,21 +129,33 @@
         class="watermark-preview"
         :src="watermarkPreviewSrc"
         :style="watermarkPreviewStyle"
-        alt="水印预览"
+        alt="watermark preview"
       />
+
+      <div
+        v-if="textBlockPreviewText"
+        class="text-block-preview"
+        :style="textBlockPreviewStyle"
+      >
+        {{ textBlockPreviewText }}
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import { BACKGROUND_COLOR_OPTIONS } from '../types/protocol'
+import TextBlockSettings from './TextBlockSettings.vue'
 import WatermarkSettings from './WatermarkSettings.vue'
 
 const store = useAppStore()
 const s = store.settings
 const draggedIndex = ref<number | null>(null)
+const previewFrameRef = ref<HTMLElement | null>(null)
+const previewFrameWidth = ref(0)
+let previewResizeObserver: ResizeObserver | null = null
 
 const processing = computed(() => store.processing)
 const gridCols = computed(() => Math.max(1, Math.ceil(Math.sqrt(store.selectedFiles.length))))
@@ -152,9 +165,8 @@ const gridRows = computed(() =>
 
 const PREVIEW_MIN_HEIGHT = 220
 const PREVIEW_MAX_HEIGHT = 520
-const PREVIEW_RESERVED_HEIGHT = 580
+const PREVIEW_RESERVED_HEIGHT = 620
 const TILE_MAX_SIZE = 180
-const TILE_GAP = 8
 
 const backgroundColorHex = computed(() => {
   return BACKGROUND_COLOR_OPTIONS.find((opt) => opt.value === s.backgroundColor)?.hex ?? '#ffffff'
@@ -163,10 +175,14 @@ const backgroundColorHex = computed(() => {
 const previewGeometry = computed(() => {
   const cols = gridCols.value
   const rows = gridRows.value
-  const borderSize = Math.max(1, s.borderSize || 1)
-  const gridWidth = cols * borderSize
-  const gridHeight = rows * borderSize
-  const border = calculateDynamicBorder(cols)
+  const tileSize = Math.max(1, (s.resampleSize || 1) + Math.max(0, s.tileBorderPx || 0) * 2)
+  const gapX = Math.max(0, s.gapXPx || 0)
+  const gapY = Math.max(0, s.gapYPx || 0)
+  const gridWidth = Math.max(1, cols * tileSize + Math.max(0, cols - 1) * gapX)
+  const gridHeight = Math.max(1, rows * tileSize + Math.max(0, rows - 1) * gapY)
+  const border = s.outerBorderMode === 'custom'
+    ? Math.max(0, s.outerBorderPx || 0)
+    : calculateDynamicBorder(cols)
   const finalSize = Math.max(1, s.finalSize || 1)
   const innerSize = Math.max(1, finalSize - border * 2)
   const scale = innerSize / Math.max(gridWidth, gridHeight)
@@ -175,7 +191,20 @@ const previewGeometry = computed(() => {
   const canvasWidth = scaledWidth + border * 2
   const canvasHeight = scaledHeight + border * 2
 
-  return { cols, rows, border, scaledWidth, scaledHeight, canvasWidth, canvasHeight }
+  return {
+    cols,
+    rows,
+    border,
+    tileSize,
+    gapX,
+    gapY,
+    gridWidth,
+    gridHeight,
+    scaledWidth,
+    scaledHeight,
+    canvasWidth,
+    canvasHeight,
+  }
 })
 
 const previewFrameStyle = computed(() => {
@@ -186,7 +215,7 @@ const previewFrameStyle = computed(() => {
   )}px, calc(${(ratio * 100).toFixed(3)}vh - ${Math.round(
     PREVIEW_RESERVED_HEIGHT * ratio
   )}px), ${Math.round(PREVIEW_MAX_HEIGHT * ratio)}px)`
-  const maxWidthByTile = geom.cols * TILE_MAX_SIZE + Math.max(0, geom.cols - 1) * TILE_GAP
+  const maxWidthByTile = geom.cols * TILE_MAX_SIZE
 
   return {
     aspectRatio: `${geom.canvasWidth} / ${geom.canvasHeight}`,
@@ -196,17 +225,42 @@ const previewFrameStyle = computed(() => {
   }
 })
 
+const previewDisplayScale = computed(() => {
+  const measuredWidth = previewFrameWidth.value
+  if (measuredWidth > 0) {
+    return measuredWidth / previewGeometry.value.canvasWidth
+  }
+
+  const geom = previewGeometry.value
+  const ratio = geom.canvasWidth / geom.canvasHeight
+  return Math.min(geom.cols * TILE_MAX_SIZE, PREVIEW_MAX_HEIGHT * ratio) / geom.canvasWidth
+})
+
 const thumbGridStyle = computed(() => {
   const geom = previewGeometry.value
 
   return {
-    gridTemplateColumns: `repeat(${geom.cols}, minmax(0, 1fr))`,
     left: `${(geom.border / geom.canvasWidth) * 100}%`,
     top: `${(geom.border / geom.canvasHeight) * 100}%`,
     width: `${(geom.scaledWidth / geom.canvasWidth) * 100}%`,
     height: `${(geom.scaledHeight / geom.canvasHeight) * 100}%`,
   }
 })
+
+function thumbTileStyle(index: number) {
+  const geom = previewGeometry.value
+  const col = index % geom.cols
+  const row = Math.floor(index / geom.cols)
+  const x = col * (geom.tileSize + geom.gapX)
+  const y = row * (geom.tileSize + geom.gapY)
+
+  return {
+    left: `${(x / geom.gridWidth) * 100}%`,
+    top: `${(y / geom.gridHeight) * 100}%`,
+    width: `${(geom.tileSize / geom.gridWidth) * 100}%`,
+    height: `${(geom.tileSize / geom.gridHeight) * 100}%`,
+  }
+}
 
 const watermarkPreviewSrc = computed(() => {
   if (!s.watermarkEnabled || !s.watermark.path) return null
@@ -230,6 +284,34 @@ const watermarkPreviewStyle = computed(() => {
   }
 })
 
+const textBlockPreviewText = computed(() => {
+  if (!s.textBlockEnabled) return ''
+  return s.textBlock.text.trim()
+})
+
+const textBlockPreviewStyle = computed(() => {
+  const text = s.textBlock
+  const scale = previewDisplayScale.value
+  const fontSize = Math.max(1, text.font_size_px * scale)
+  const lineHeight = Math.max(fontSize, text.line_height_px * scale)
+  const padding = Math.max(0, text.padding_px * scale)
+
+  return {
+    left: `${clamp(text.position_x_percent, 0, 100)}%`,
+    top: `${clamp(text.position_y_percent, 0, 100)}%`,
+    width: `${clamp(text.max_width_percent, 1, 100)}%`,
+    color: rgbaCss(text.text_rgba),
+    backgroundColor: rgbaCss(text.background_rgba),
+    padding: `${padding}px`,
+    fontFamily: text.font_family,
+    fontWeight: `${text.font_weight}`,
+    fontStyle: text.font_style,
+    fontSize: `${fontSize}px`,
+    lineHeight: `${lineHeight}px`,
+    textAlign: text.align,
+  }
+})
+
 const fileCountText = computed(() => {
   const n = store.selectedFiles.length
   if (n === 0) return '未选择图片'
@@ -243,14 +325,12 @@ function basename(path: string): string {
 async function selectImages() {
   const files = await window.electronAPI.openImages()
   if (!files.length) return
-
   applySelectedFiles(files, false)
 }
 
 async function appendImages() {
   const files = await window.electronAPI.openImages()
   if (!files.length) return
-
   applySelectedFiles(files, true)
 }
 
@@ -270,7 +350,7 @@ function applySelectedFiles(files: string[], append: boolean) {
   }
 
   if (append) {
-    store.appendSelectedFiles(files)
+    store.appendSelectedFiles(uniqueNew)
   } else {
     store.setSelectedFiles(uniqueNew)
   }
@@ -358,6 +438,15 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min))
 }
 
+function rgbaCss(color: [number, number, number, number]): string {
+  const [r, g, b, a] = color
+  return `rgba(${clamp(r, 0, 255)}, ${clamp(g, 0, 255)}, ${clamp(b, 0, 255)}, ${clamp(a, 0, 255) / 255})`
+}
+
+function updatePreviewFrameWidth() {
+  previewFrameWidth.value = previewFrameRef.value?.getBoundingClientRect().width ?? 0
+}
+
 watch(
   () => ({
     files: [...store.selectedFiles],
@@ -375,6 +464,28 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  previewFrameRef,
+  (element, previousElement) => {
+    if (!previewResizeObserver) {
+      previewResizeObserver = new ResizeObserver(updatePreviewFrameWidth)
+    }
+
+    if (previousElement) {
+      previewResizeObserver.unobserve(previousElement)
+    }
+    if (element) {
+      previewResizeObserver.observe(element)
+    }
+    updatePreviewFrameWidth()
+  },
+  { flush: 'post' }
+)
+
+onBeforeUnmount(() => {
+  previewResizeObserver?.disconnect()
+})
 </script>
 
 <style scoped>
@@ -408,19 +519,16 @@ watch(
 
 .collage-preview {
   position: absolute;
-  display: grid;
-  gap: 1.5%;
 }
 
 .thumb-tile {
-  position: relative;
+  position: absolute;
   background: var(--preview-bg);
   border: 1px solid var(--color-border);
   border-radius: 5px;
   padding: 0;
   color: var(--color-text-secondary);
   min-width: 0;
-  aspect-ratio: 1;
   overflow: hidden;
   cursor: grab;
   transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
@@ -530,14 +638,24 @@ watch(
   opacity: 0.35;
 }
 
-.watermark-preview {
+.watermark-preview,
+.text-block-preview {
   position: absolute;
   transform: translate(-50%, -50%);
-  object-fit: contain;
   pointer-events: none;
+  z-index: 5;
+}
+
+.watermark-preview {
+  object-fit: contain;
   opacity: 0.78;
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.35));
-  z-index: 5;
+}
+
+.text-block-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
 }
 
 .path-btn {

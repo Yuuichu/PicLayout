@@ -4,12 +4,14 @@ mod color;
 mod config;
 mod dpi;
 mod error;
+mod fonts;
 mod image_loader;
 mod image_proc;
 mod jpeg_output;
 mod metadata;
 mod pipeline;
 mod progress;
+mod text_block;
 mod watermark;
 
 use std::io::{self, BufRead};
@@ -18,6 +20,19 @@ use config::CollageConfig;
 use progress::{send, ProgressMessage};
 
 fn main() {
+    if std::env::args().any(|arg| arg == "--list-fonts") {
+        match serde_json::to_string(&fonts::list_system_fonts()) {
+            Ok(json) => {
+                println!("{}", json);
+                return;
+            }
+            Err(e) => {
+                eprintln!("failed to serialize font list: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     // 从 stdin 读取一行 JSON 配置
     let stdin = io::stdin();
     let mut lines = stdin.lock().lines();

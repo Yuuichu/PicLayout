@@ -1,4 +1,4 @@
-import type { CollageConfig, CollageResult, ProgressMessage } from './protocol'
+import type { CollageConfig, CollageResult, FontFaceInfo, ProgressMessage } from './protocol'
 
 export type ElectronAPI = {
   openImages: () => Promise<string[]>
@@ -9,6 +9,7 @@ export type ElectronAPI = {
   getThumbnail: (path: string) => Promise<string | null>
   getImageOrientation: (path: string) => Promise<number | null>
   getImageSize: (path: string) => Promise<{ width: number; height: number } | null>
+  listFonts: () => Promise<FontFaceInfo[]>
   startCollage: (config: CollageConfig) => Promise<CollageResult>
   cancelCollage: () => Promise<void>
   onProgress: (callback: (msg: ProgressMessage) => void) => () => void

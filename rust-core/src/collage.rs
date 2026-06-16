@@ -45,7 +45,9 @@ pub struct FinalCollageLayout {
     pub grid_cols: u32,
     pub scale: f64,
     pub outer_border: u32,
-    pub border_size: u32,
+    pub tile_size: u32,
+    pub gap_x: u32,
+    pub gap_y: u32,
     pub canvas_width: u32,
     pub canvas_height: u32,
 }
@@ -66,14 +68,12 @@ impl FinalCollageLayout {
         if tile_count == 0 {
             return Err(AppError::NoImagesProcessed);
         }
-        let grid_cols = (tile_count as f64).sqrt().ceil() as u32;
-        let grid_rows = (tile_count as f64 / grid_cols as f64).ceil() as u32;
-        let collage_width = grid_cols
-            .checked_mul(config.border_size)
-            .ok_or_else(|| AppError::Processing("collage width calculation overflowed".into()))?;
-        let collage_height = grid_rows
-            .checked_mul(config.border_size)
-            .ok_or_else(|| AppError::Processing("collage height calculation overflowed".into()))?;
+        let (grid_cols, grid_rows) = grid_shape(tile_count);
+        let tile_size = config
+            .tile_size()
+            .ok_or_else(|| AppError::Processing("tile size calculation overflowed".into()))?;
+        let (collage_width, collage_height) =
+            grid_dimensions(grid_cols, grid_rows, tile_size, config.gap_x_px, config.gap_y_px)?;
         if collage_width > MAX_JPEG_DIMENSION || collage_height > MAX_JPEG_DIMENSION {
             return Err(AppError::Processing(format!(
                 "collage dimensions {}x{} px exceed JPEG limit {} px",
@@ -81,22 +81,27 @@ impl FinalCollageLayout {
             )));
         }
 
-        let inner_size = config.final_size.saturating_sub(2 * outer_border).max(1);
+        let double_outer_border = outer_border
+            .checked_mul(2)
+            .ok_or_else(|| AppError::Processing("outer border calculation overflowed".into()))?;
+        let inner_size = config.final_size.saturating_sub(double_outer_border).max(1);
         let scale = inner_size as f64 / collage_width.max(collage_height) as f64;
         let scaled_width = (collage_width as f64 * scale).round().max(1.0) as u32;
         let scaled_height = (collage_height as f64 * scale).round().max(1.0) as u32;
         let canvas_width = scaled_width
-            .checked_add(2 * outer_border)
+            .checked_add(double_outer_border)
             .ok_or_else(|| AppError::Processing("final width calculation overflowed".into()))?;
         let canvas_height = scaled_height
-            .checked_add(2 * outer_border)
+            .checked_add(double_outer_border)
             .ok_or_else(|| AppError::Processing("final height calculation overflowed".into()))?;
 
         Ok(Self {
             grid_cols,
             scale,
             outer_border,
-            border_size: config.border_size,
+            tile_size,
+            gap_x: config.gap_x_px,
+            gap_y: config.gap_y_px,
             canvas_width,
             canvas_height,
         })
@@ -105,10 +110,10 @@ impl FinalCollageLayout {
     pub fn tile_placement(&self, index: u32, image_width: u32, image_height: u32) -> TilePlacement {
         let col = index % self.grid_cols;
         let row = index / self.grid_cols;
-        let tile_x = col * self.border_size;
-        let tile_y = row * self.border_size;
-        let offset_x = self.border_size.saturating_sub(image_width) / 2;
-        let offset_y = self.border_size.saturating_sub(image_height) / 2;
+        let tile_x = col * (self.tile_size + self.gap_x);
+        let tile_y = row * (self.tile_size + self.gap_y);
+        let offset_x = self.tile_size.saturating_sub(image_width) / 2;
+        let offset_y = self.tile_size.saturating_sub(image_height) / 2;
 
         let x0 = scale_coord(tile_x + offset_x, self.scale) + self.outer_border;
         let y0 = scale_coord(tile_y + offset_y, self.scale) + self.outer_border;
@@ -122,6 +127,40 @@ impl FinalCollageLayout {
             height: y1.saturating_sub(y0).max(1),
         }
     }
+}
+
+pub fn grid_shape(tile_count: u32) -> (u32, u32) {
+    let grid_cols = (tile_count as f64).sqrt().ceil() as u32;
+    let grid_rows = (tile_count as f64 / grid_cols as f64).ceil() as u32;
+    (grid_cols, grid_rows)
+}
+
+pub fn grid_dimensions(
+    grid_cols: u32,
+    grid_rows: u32,
+    tile_size: u32,
+    gap_x: u32,
+    gap_y: u32,
+) -> Result<(u32, u32), AppError> {
+    let width = spaced_extent(grid_cols, tile_size, gap_x, "collage width")?;
+    let height = spaced_extent(grid_rows, tile_size, gap_y, "collage height")?;
+    Ok((width, height))
+}
+
+fn spaced_extent(count: u32, tile_size: u32, gap: u32, label: &str) -> Result<u32, AppError> {
+    if count == 0 {
+        return Ok(0);
+    }
+    let tiles = count
+        .checked_mul(tile_size)
+        .ok_or_else(|| AppError::Processing(format!("{} calculation overflowed", label)))?;
+    let gaps = count
+        .saturating_sub(1)
+        .checked_mul(gap)
+        .ok_or_else(|| AppError::Processing(format!("{} gap calculation overflowed", label)))?;
+    tiles
+        .checked_add(gaps)
+        .ok_or_else(|| AppError::Processing(format!("{} calculation overflowed", label)))
 }
 
 fn scale_coord(value: u32, scale: f64) -> u32 {
@@ -138,9 +177,10 @@ pub fn create_collage_image(
     }
 
     let num = tiles.len() as u32;
-    let grid_cols = (num as f64).sqrt().ceil() as u32;
-    let grid_rows = (num as f64 / grid_cols as f64).ceil() as u32;
-    let bs = config.border_size;
+    let (grid_cols, grid_rows) = grid_shape(num);
+    let bs = config
+        .tile_size()
+        .ok_or_else(|| AppError::Processing("tile size calculation overflowed".into()))?;
     let total_width = grid_cols
         .checked_mul(bs)
         .ok_or_else(|| AppError::Processing("collage width calculation overflowed".into()))?;
@@ -189,9 +229,10 @@ pub fn create_collage(
     }
 
     let num = images.len() as u32;
-    let grid_cols = (num as f64).sqrt().ceil() as u32;
-    let grid_rows = (num as f64 / grid_cols as f64).ceil() as u32;
-    let bs = config.border_size;
+    let (grid_cols, grid_rows) = grid_shape(num);
+    let bs = config
+        .tile_size()
+        .ok_or_else(|| AppError::Processing("tile size calculation overflowed".into()))?;
     let total_width = grid_cols
         .checked_mul(bs)
         .ok_or_else(|| AppError::Processing("collage width calculation overflowed".into()))?;
@@ -345,10 +386,15 @@ mod tests {
             prefix: "test".into(),
             resample_size: 4,
             border_size: 10,
+            tile_border_px: None,
+            gap_x_px: 0,
+            gap_y_px: 0,
+            outer_border_px: None,
             final_size: 10,
             dpi: 300,
             background_color: BackgroundColor::White,
             watermark: None,
+            text_block: None,
             overwrite: false,
             output_settings: OutputSettings::default(),
             color_management: ColorManagementConfig {
@@ -362,7 +408,9 @@ mod tests {
             grid_cols: 1,
             scale: 1.0,
             outer_border: 0,
-            border_size: 10,
+            tile_size: 10,
+            gap_x: 0,
+            gap_y: 0,
             canvas_width: 10,
             canvas_height: 10,
         };
@@ -379,5 +427,46 @@ mod tests {
         assert_eq!(out.get_pixel(3, 4).0, [200, 0, 0, 255]);
         assert_eq!(out.get_pixel(4, 5).0, [200, 0, 0, 255]);
         assert_eq!(out.get_pixel(5, 5).0, [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn final_layout_applies_explicit_tile_border_and_gaps() {
+        let config = CollageConfig {
+            image_paths: vec![],
+            image_rotations: Default::default(),
+            processing_mode: ProcessingMode::StandardHighQuality,
+            output_dir: std::path::PathBuf::new(),
+            prefix: "test".into(),
+            resample_size: 4,
+            border_size: 99,
+            tile_border_px: Some(3),
+            gap_x_px: 5,
+            gap_y_px: 7,
+            outer_border_px: Some(0),
+            final_size: 27,
+            dpi: 300,
+            background_color: BackgroundColor::White,
+            watermark: None,
+            text_block: None,
+            overwrite: false,
+            output_settings: OutputSettings::default(),
+            color_management: ColorManagementConfig {
+                enabled: false,
+                target_profile: TargetProfileMode::Srgb,
+                target_profile_path: None,
+                rendering_intent: RenderingIntent::Perceptual,
+            },
+        };
+
+        let layout = FinalCollageLayout::new(4, &config, 0).unwrap();
+        let first_row_second_col = layout.tile_placement(1, 4, 4);
+        let second_row_first_col = layout.tile_placement(2, 4, 4);
+
+        assert_eq!(layout.canvas_width, 25);
+        assert_eq!(layout.canvas_height, 27);
+        assert_eq!(first_row_second_col.x, 18);
+        assert_eq!(first_row_second_col.y, 3);
+        assert_eq!(second_row_first_col.x, 3);
+        assert_eq!(second_row_first_col.y, 20);
     }
 }

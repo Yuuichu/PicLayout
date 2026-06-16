@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { dirname, join } from 'path'
 import { app } from 'electron'
-import { existsSync, readdirSync, unlinkSync } from 'fs'
+import { existsSync, readdirSync, statSync, unlinkSync } from 'fs'
 
 export interface CollageConfig {
   image_paths: string[]
@@ -11,6 +11,10 @@ export interface CollageConfig {
   prefix: string
   resample_size?: number
   border_size?: number
+  tile_border_px?: number | null
+  gap_x_px?: number
+  gap_y_px?: number
+  outer_border_px?: number | null
   final_size?: number
   dpi?: number
   background_color?: string
@@ -32,6 +36,26 @@ export interface CollageConfig {
     position_x_percent?: number
     position_y_percent?: number
   } | null
+  text_block?: TextBlockConfig | null
+}
+
+export type TextFontStyle = 'normal' | 'italic' | 'oblique'
+export type TextAlign = 'left' | 'center' | 'right'
+
+export interface TextBlockConfig {
+  text: string
+  font_family: string
+  font_weight: number
+  font_style: TextFontStyle
+  font_size_px: number
+  line_height_px: number
+  max_width_percent: number
+  align: TextAlign
+  text_rgba: [number, number, number, number]
+  background_rgba: [number, number, number, number]
+  padding_px: number
+  position_x_percent: number
+  position_y_percent: number
 }
 
 export interface FailedImage {
@@ -83,26 +107,30 @@ export type ProgressMessage =
   | { type: 'cancelled'; message: string; partial_outputs: string[] }
   | { type: 'error'; message: string }
 
-function getRustCorePath(): string {
+export function getRustCorePath(): string {
   if (app.isPackaged) {
     return join(process.resourcesPath, 'rust-core.exe')
   }
 
   const releaseExe = join(__dirname, '../../../rust-core/target/release/rust-core.exe')
   const debugExe = join(__dirname, '../../../rust-core/target/debug/rust-core.exe')
-  try {
-    require('fs').accessSync(releaseExe)
-    return releaseExe
-  } catch {
-    return debugExe
+
+  if (existsSync(releaseExe) && existsSync(debugExe)) {
+    return statSync(debugExe).mtimeMs >= statSync(releaseExe).mtimeMs ? debugExe : releaseExe
   }
+  if (existsSync(releaseExe)) return releaseExe
+  return debugExe
 }
 
 function getExpectedOutputPaths(config: CollageConfig): string[] {
-  if (config.watermark) {
+  if (hasOverlay(config)) {
     return [join(config.output_dir, `${config.prefix}_collage_final_watermarked.jpg`)]
   }
   return [join(config.output_dir, `${config.prefix}_collage_final.jpg`)]
+}
+
+function hasOverlay(config: CollageConfig): boolean {
+  return !!config.watermark || !!config.text_block?.text?.trim()
 }
 
 function existingPaths(paths: string[]): string[] {

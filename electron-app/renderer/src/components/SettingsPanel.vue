@@ -1,6 +1,5 @@
 <template>
   <div class="settings-panel">
-
     <div class="card">
       <p class="section-title">基础参数</p>
 
@@ -13,22 +12,53 @@
       <div class="form-row">
         <label>单图内容长边</label>
         <input v-model.number="s.resampleSize" type="number" min="500" max="20000" style="max-width:90px" @change="save" />
-        <span class="hint">控制图片在单图边框内的最大长边</span>
+        <span class="hint">图片在单个 tile 内的最大长边</span>
       </div>
-      <p class="setting-note">
-        当前流程会直接缩放到最终输出尺寸；这里不再生成中间图，而是控制每张图在方形边框中的占比。数值越小，单张图周围留白越多。
-      </p>
 
       <div class="form-row">
-        <label>单图边框大小</label>
-        <input v-model.number="s.borderSize" type="number" min="500" max="20000" style="max-width:90px" @change="save" />
-        <span class="hint">像素（正方形边长）</span>
+        <label>单图边框宽度</label>
+        <input v-model.number="s.tileBorderPx" type="number" min="0" max="10000" style="max-width:90px" @change="save" />
+        <span class="hint">tile 边长 = 内容长边 + 2 倍边框</span>
+      </div>
+
+      <div class="form-row">
+        <label>横向图片间隔</label>
+        <input v-model.number="s.gapXPx" type="number" min="0" max="20000" style="max-width:90px" @change="save" />
+        <span class="hint">按布局像素设置，导出时随最终尺寸缩放</span>
+      </div>
+
+      <div class="form-row">
+        <label>纵向图片间隔</label>
+        <input v-model.number="s.gapYPx" type="number" min="0" max="20000" style="max-width:90px" @change="save" />
+        <span class="hint">按布局像素设置，导出时随最终尺寸缩放</span>
+      </div>
+
+      <div class="form-row">
+        <label>最终外边距</label>
+        <div class="segmented-control">
+          <button type="button" :class="{ active: s.outerBorderMode === 'auto' }" @click="setOuterBorderMode('auto')">
+            自动
+          </button>
+          <button type="button" :class="{ active: s.outerBorderMode === 'custom' }" @click="setOuterBorderMode('custom')">
+            自定义
+          </button>
+        </div>
+        <input
+          v-if="s.outerBorderMode === 'custom'"
+          v-model.number="s.outerBorderPx"
+          type="number"
+          min="0"
+          max="30000"
+          style="max-width:90px"
+          @change="save"
+        />
+        <span class="hint">最终导出画布像素</span>
       </div>
 
       <div class="form-row">
         <label>最终图像大小</label>
         <input v-model.number="s.finalSize" type="number" min="1000" max="30000" style="max-width:90px" @change="save" />
-        <span class="hint">像素（长边）</span>
+        <span class="hint">像素，长边</span>
       </div>
 
       <div class="form-row">
@@ -116,7 +146,7 @@
         </label>
       </div>
       <p class="setting-note">
-        线性光会先按真实亮度关系缩放再转回 sRGB，渐变和边缘更自然，但速度更慢；勾选后会自动切换到极致高画质，取消勾选会回到标准高画质。
+        线性光会先按真实亮度关系缩放再转回 sRGB，渐变和边缘更自然，但速度更慢；勾选后会自动切换到极致高画质。
       </p>
     </div>
 
@@ -156,12 +186,8 @@
             <option value="relative_colorimetric">Relative Colorimetric</option>
           </select>
         </div>
-        <p class="setting-note">
-          Perceptual 会整体压缩颜色关系，适合照片和色域差异较大的转换；Relative Colorimetric 会尽量保持色域内颜色准确，超出色域的颜色会被裁切。
-        </p>
       </template>
     </div>
-
   </div>
 </template>
 
@@ -191,6 +217,11 @@ function selectColor(val: BackgroundColor) {
 function setProcessingMode(mode: ProcessingMode) {
   s.processingMode = mode
   s.linearLightResize = mode === 'maximum_quality'
+  save()
+}
+
+function setOuterBorderMode(mode: 'auto' | 'custom') {
+  s.outerBorderMode = mode
   save()
 }
 
@@ -270,17 +301,15 @@ async function selectIccProfile() {
   border-color: #999;
 }
 
-.memory-tip {
-  font-size: 11px;
+.memory-tip,
+.setting-note {
+  font-size: 12px;
   color: var(--color-text-secondary);
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .setting-note {
   margin-top: -4px;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  line-height: 1.45;
 }
 
 .icc-btn {

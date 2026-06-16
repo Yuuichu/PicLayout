@@ -1,9 +1,9 @@
 import { BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { listSystemFonts } from './font-metadata'
 import { readExifOrientation, sizeWithExifOrientation } from './image-metadata'
 import { rustBridge, CollageConfig, ProgressMessage } from './rust-bridge'
 
 export function registerIpcHandlers(win: BrowserWindow): void {
-  // 选择图片文件
   ipcMain.handle('dialog:openImages', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择图片',
@@ -13,7 +13,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return result.canceled ? [] : result.filePaths
   })
 
-  // 选择水印图片
   ipcMain.handle('dialog:openWatermark', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择水印图片',
@@ -23,7 +22,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
-  // 选择 ICC profile
   ipcMain.handle('dialog:openIccProfile', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择 ICC profile',
@@ -33,7 +31,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
-  // 选择导出目录
   ipcMain.handle('dialog:openDirectory', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择导出目录',
@@ -42,12 +39,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
-  // 打开系统路径
   ipcMain.handle('shell:openPath', async (_event, path: string) => {
     return shell.openPath(path)
   })
 
-  // 读取缩略图
   ipcMain.handle('image:thumbnail', async (_event, path: string) => {
     const img = nativeImage.createFromPath(path)
     if (img.isEmpty()) return null
@@ -67,14 +62,16 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return readExifOrientation(path)
   })
 
-  // 读取图片尺寸，用于缩略图和水印预览
   ipcMain.handle('image:size', async (_event, path: string) => {
     const img = nativeImage.createFromPath(path)
     if (img.isEmpty()) return null
     return sizeWithExifOrientation(img.getSize(), readExifOrientation(path))
   })
 
-  // 启动拼贴处理
+  ipcMain.handle('fonts:list', async () => {
+    return listSystemFonts()
+  })
+
   ipcMain.handle('collage:start', async (_event, config: CollageConfig) => {
     if (rustBridge.isRunning()) {
       throw new Error('已有任务正在处理中')
@@ -87,7 +84,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return rustBridge.start(config, onProgress)
   })
 
-  // 取消处理
   ipcMain.handle('collage:cancel', () => {
     rustBridge.cancel()
   })

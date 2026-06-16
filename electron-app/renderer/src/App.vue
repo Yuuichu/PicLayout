@@ -169,6 +169,7 @@ async function startCollage() {
 
   const clickedAt = performance.now()
   const s = store.settings
+  const tileSize = s.resampleSize + s.tileBorderPx * 2
   const config: CollageConfig = {
     image_paths: store.selectedFiles,
     image_rotations: store.selectedImageRotations(),
@@ -176,7 +177,11 @@ async function startCollage() {
     output_dir: s.outputDir,
     prefix: s.prefix || 'output',
     resample_size: s.resampleSize,
-    border_size: s.borderSize,
+    border_size: tileSize,
+    tile_border_px: s.tileBorderPx,
+    gap_x_px: s.gapXPx,
+    gap_y_px: s.gapYPx,
+    outer_border_px: s.outerBorderMode === 'custom' ? s.outerBorderPx : null,
     final_size: s.finalSize,
     dpi: s.dpi,
     background_color: s.backgroundColor,
@@ -198,6 +203,10 @@ async function startCollage() {
     watermark:
       s.watermarkEnabled && s.watermark.path
         ? { ...s.watermark }
+        : null,
+    text_block:
+      s.textBlockEnabled && s.textBlock.text.trim()
+        ? { ...s.textBlock }
         : null,
   }
 

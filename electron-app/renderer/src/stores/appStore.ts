@@ -8,6 +8,7 @@ import type {
   RenderingIntent,
   StageTiming,
   TargetProfileMode,
+  TextBlockConfig,
   WatermarkConfig,
 } from '../types/protocol'
 
@@ -23,6 +24,11 @@ interface Settings {
   maxImages: number
   resampleSize: number
   borderSize: number
+  tileBorderPx: number
+  gapXPx: number
+  gapYPx: number
+  outerBorderMode: 'auto' | 'custom'
+  outerBorderPx: number
   finalSize: number
   dpi: number
   backgroundColor: BackgroundColor
@@ -38,6 +44,8 @@ interface Settings {
   renderingIntent: RenderingIntent
   watermarkEnabled: boolean
   watermark: WatermarkConfig
+  textBlockEnabled: boolean
+  textBlock: TextBlockConfig
 }
 
 function loadSettings(): Settings {
@@ -45,8 +53,15 @@ function loadSettings(): Settings {
     const stored = localStorage.getItem(SETTINGS_KEY)
     if (stored) {
       const parsed = JSON.parse(stored)
-      const settings = { ...defaultSettings(), ...parsed }
+      const defaults = defaultSettings()
+      const settings = {
+        ...defaults,
+        ...parsed,
+        watermark: { ...defaults.watermark, ...parsed.watermark },
+        textBlock: { ...defaults.textBlock, ...parsed.textBlock },
+      }
       normalizeQualitySettings(settings, parsed)
+      normalizeLayoutSettings(settings, parsed)
       return settings
     }
   } catch {}
@@ -85,6 +100,11 @@ function defaultSettings(): Settings {
     maxImages: 40,
     resampleSize: 4000,
     borderSize: 4200,
+    tileBorderPx: 100,
+    gapXPx: 0,
+    gapYPx: 0,
+    outerBorderMode: 'auto',
+    outerBorderPx: 1000,
     finalSize: 10000,
     dpi: 300,
     backgroundColor: 'white',
@@ -105,7 +125,36 @@ function defaultSettings(): Settings {
       position_x_percent: 50,
       position_y_percent: 95,
     },
+    textBlockEnabled: false,
+    textBlock: {
+      text: '',
+      font_family: 'sans-serif',
+      font_weight: 400,
+      font_style: 'normal',
+      font_size_px: 120,
+      line_height_px: 144,
+      max_width_percent: 60,
+      align: 'center',
+      text_rgba: [255, 255, 255, 255],
+      background_rgba: [0, 0, 0, 0],
+      padding_px: 0,
+      position_x_percent: 50,
+      position_y_percent: 92,
+    },
   }
+}
+
+function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings>) {
+  if (parsed.tileBorderPx === undefined) {
+    const resampleSize = Number(parsed.resampleSize ?? settings.resampleSize)
+    const borderSize = Number(parsed.borderSize ?? settings.borderSize)
+    settings.tileBorderPx = Math.max(0, Math.round((borderSize - resampleSize) / 2))
+  }
+  settings.borderSize = settings.resampleSize + settings.tileBorderPx * 2
+  settings.gapXPx = Math.max(0, settings.gapXPx || 0)
+  settings.gapYPx = Math.max(0, settings.gapYPx || 0)
+  settings.outerBorderMode = settings.outerBorderMode === 'custom' ? 'custom' : 'auto'
+  settings.outerBorderPx = Math.max(0, settings.outerBorderPx || 0)
 }
 
 export const useAppStore = defineStore('app', () => {
@@ -113,6 +162,7 @@ export const useAppStore = defineStore('app', () => {
   const settings = reactive<Settings>(loadSettings())
 
   function saveSettings() {
+    settings.borderSize = settings.resampleSize + settings.tileBorderPx * 2
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   }
 

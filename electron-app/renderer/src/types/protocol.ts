@@ -6,10 +6,15 @@ export interface CollageConfig {
   prefix: string
   resample_size: number
   border_size: number
+  tile_border_px?: number | null
+  gap_x_px: number
+  gap_y_px: number
+  outer_border_px?: number | null
   final_size: number
   dpi: number
   background_color: BackgroundColor
   watermark: WatermarkConfig | null
+  text_block: TextBlockConfig | null
   overwrite?: boolean
   output_settings: OutputSettings
   color_management: ColorManagementConfig
@@ -26,6 +31,33 @@ export interface WatermarkConfig {
   scale_percent: number
   position_x_percent: number
   position_y_percent: number
+}
+
+export type TextFontStyle = 'normal' | 'italic' | 'oblique'
+export type TextAlign = 'left' | 'center' | 'right'
+
+export interface TextBlockConfig {
+  text: string
+  font_family: string
+  font_weight: number
+  font_style: TextFontStyle
+  font_size_px: number
+  line_height_px: number
+  max_width_percent: number
+  align: TextAlign
+  text_rgba: [number, number, number, number]
+  background_rgba: [number, number, number, number]
+  padding_px: number
+  position_x_percent: number
+  position_y_percent: number
+}
+
+export interface FontFaceInfo {
+  family: string
+  post_script_name: string
+  weight: number
+  style: TextFontStyle | string
+  monospaced: boolean
 }
 
 export interface OutputSettings {

@@ -7,7 +7,9 @@ use rayon::prelude::*;
 
 use crate::{
     border::calculate_dynamic_border,
-    collage::{create_final_collage_image, FinalCollageLayout, ProcessedTile},
+    collage::{
+        create_final_collage_image, grid_dimensions, grid_shape, FinalCollageLayout, ProcessedTile,
+    },
     color,
     config::{CollageConfig, TargetProfileMode},
     error::AppError,
@@ -15,6 +17,7 @@ use crate::{
     image_proc::{apply_manual_rotation, fit_long_edge, resize_high_quality_with_options},
     jpeg_output::save_user_jpeg,
     progress::{self, FailedImage, ProgressMessage, Stage, StageTiming, StageTimingDetail},
+    text_block::add_text_block_to_image,
     watermark::add_watermark_to_image,
 };
 
@@ -141,8 +144,10 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     let mut timer = PipelineTimer::new(job_start);
     let total = config.image_paths.len();
     let planned_cols = (total as f64).sqrt().ceil() as u32;
-    let dynamic_border = calculate_dynamic_border(planned_cols);
-    let final_layout = FinalCollageLayout::new(total as u32, config, dynamic_border)?;
+    let outer_border = config
+        .outer_border_px
+        .unwrap_or_else(|| calculate_dynamic_border(planned_cols));
+    let final_layout = FinalCollageLayout::new(total as u32, config, outer_border)?;
 
     progress::send(&ProgressMessage::JobStarted {
         total,
@@ -277,17 +282,25 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     timer.finish_stage(Stage::CreatingCollage);
 
     let mut outputs = Vec::new();
-    if let Some(ref wm_config) = config.watermark {
+    if config.has_overlay() {
         progress::send(&ProgressMessage::StageChanged {
             stage: Stage::AddingWatermark,
-            message: "Adding watermark...".into(),
+            message: "Adding overlays...".into(),
             elapsed_ms: timer.total_elapsed_ms(),
         });
 
-        let (watermarked, watermark_warnings) =
-            add_watermark_to_image(final_image, wm_config, config, &target_profile)?;
-        final_image = watermarked;
-        warnings.extend(watermark_warnings);
+        if let Some(ref wm_config) = config.watermark {
+            let (watermarked, watermark_warnings) =
+                add_watermark_to_image(final_image, wm_config, config, &target_profile)?;
+            final_image = watermarked;
+            warnings.extend(watermark_warnings);
+        }
+
+        if let Some(ref text_config) = config.text_block {
+            let (texted, text_warnings) = add_text_block_to_image(final_image, text_config)?;
+            final_image = texted;
+            warnings.extend(text_warnings);
+        }
         timer.finish_stage(Stage::AddingWatermark);
     }
 
@@ -296,7 +309,7 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         message: "Saving JPEG output...".into(),
         elapsed_ms: timer.total_elapsed_ms(),
     });
-    if config.watermark.is_some() {
+    if config.has_overlay() {
         let wm_path = config
             .output_dir
             .join(format!("{}_collage_final_watermarked.jpg", config.prefix));
@@ -393,15 +406,26 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
         )));
     }
 
-    if config.resample_size == 0 || config.border_size == 0 || config.final_size == 0 {
+    if config.resample_size == 0 || config.final_size == 0 {
         return Err(AppError::Processing(
             "size parameters must be greater than 0".into(),
         ));
     }
-    if config.resample_size > config.border_size {
+    let tile_size = config
+        .tile_size()
+        .ok_or_else(|| AppError::Processing("tile size calculation overflowed".into()))?;
+    if tile_size == 0 {
+        return Err(AppError::Processing("tile size must be greater than 0".into()));
+    }
+    if config.tile_border_px.is_none() && config.border_size == 0 {
+        return Err(AppError::Processing(
+            "legacy tile border size must be greater than 0".into(),
+        ));
+    }
+    if config.resample_size > tile_size {
         return Err(AppError::Processing(format!(
             "resample size {} px cannot exceed tile border size {} px",
-            config.resample_size, config.border_size
+            config.resample_size, tile_size
         )));
     }
     if config.final_size > MAX_JPEG_DIMENSION {
@@ -424,14 +448,14 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
         )));
     }
 
-    let planned_cols = (config.image_paths.len() as f64).sqrt().ceil() as u32;
-    let planned_rows = (config.image_paths.len() as f64 / planned_cols as f64).ceil() as u32;
-    let collage_width = planned_cols
-        .checked_mul(config.border_size)
-        .ok_or_else(|| AppError::Processing("collage width calculation overflowed".into()))?;
-    let collage_height = planned_rows
-        .checked_mul(config.border_size)
-        .ok_or_else(|| AppError::Processing("collage height calculation overflowed".into()))?;
+    let (planned_cols, planned_rows) = grid_shape(config.image_paths.len() as u32);
+    let (collage_width, collage_height) = grid_dimensions(
+        planned_cols,
+        planned_rows,
+        tile_size,
+        config.gap_x_px,
+        config.gap_y_px,
+    )?;
     if collage_width > MAX_JPEG_DIMENSION || collage_height > MAX_JPEG_DIMENSION {
         return Err(AppError::Processing(format!(
             "collage dimensions {}x{} px exceed JPEG limit {} px",
@@ -439,12 +463,17 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
         )));
     }
 
-    let dynamic_border = calculate_dynamic_border(planned_cols);
-    if config.final_size <= dynamic_border * 2 {
+    let outer_border = config
+        .outer_border_px
+        .unwrap_or_else(|| calculate_dynamic_border(planned_cols));
+    let double_outer_border = outer_border
+        .checked_mul(2)
+        .ok_or_else(|| AppError::Processing("outer border calculation overflowed".into()))?;
+    if config.final_size <= double_outer_border {
         return Err(AppError::Processing(format!(
             "final image size {} px is too small; current image count requires more than {} px",
             config.final_size,
-            dynamic_border * 2
+            double_outer_border
         )));
     }
     ensure_rgba_allocation_safe(config.final_size, config.final_size, "final output")?;
@@ -496,6 +525,10 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
         }
     }
 
+    if let Some(text_block) = &config.text_block {
+        validate_text_block(text_block)?;
+    }
+
     if config.color_management.enabled
         && config.color_management.target_profile == TargetProfileMode::Custom
     {
@@ -543,10 +576,24 @@ fn processing_thread_count(config: &CollageConfig) -> usize {
 
 fn estimate_pipeline_rgba_bytes(config: &CollageConfig) -> u64 {
     let final_canvas = config.final_size as u64 * config.final_size as u64 * 4;
-    let planned_cols = (config.image_paths.len() as f64).sqrt().ceil() as u32;
-    let dynamic_border = calculate_dynamic_border(planned_cols);
-    let inner_size = config.final_size.saturating_sub(2 * dynamic_border).max(1);
-    let scale = inner_size as f64 / (planned_cols * config.border_size) as f64;
+    let (planned_cols, planned_rows) = grid_shape(config.image_paths.len() as u32);
+    let outer_border = config
+        .outer_border_px
+        .unwrap_or_else(|| calculate_dynamic_border(planned_cols));
+    let tile_size = config.tile_size().unwrap_or(config.border_size).max(1);
+    let (grid_width, grid_height) = grid_dimensions(
+        planned_cols,
+        planned_rows,
+        tile_size,
+        config.gap_x_px,
+        config.gap_y_px,
+    )
+    .unwrap_or((planned_cols.saturating_mul(tile_size), planned_rows.saturating_mul(tile_size)));
+    let inner_size = config
+        .final_size
+        .saturating_sub(outer_border.saturating_mul(2))
+        .max(1);
+    let scale = inner_size as f64 / grid_width.max(grid_height).max(1) as f64;
     let max_tile_edge = (config.resample_size as f64 * scale).ceil().max(1.0) as u64;
     let per_tile = max_tile_edge * max_tile_edge * 4;
     let tile_cache = per_tile.saturating_mul(config.image_paths.len() as u64);
@@ -558,7 +605,7 @@ fn bytes_to_gib(bytes: u64) -> f64 {
 }
 
 fn expected_output_paths(config: &CollageConfig) -> Vec<PathBuf> {
-    if config.watermark.is_some() {
+    if config.has_overlay() {
         vec![config
             .output_dir
             .join(format!("{}_collage_final_watermarked.jpg", config.prefix))]
@@ -569,12 +616,49 @@ fn expected_output_paths(config: &CollageConfig) -> Vec<PathBuf> {
     }
 }
 
+fn validate_text_block(text_block: &crate::config::TextBlockConfig) -> Result<(), AppError> {
+    if text_block.text.trim().is_empty() {
+        return Err(AppError::Processing("text block cannot be empty".into()));
+    }
+    if !(1..=999).contains(&text_block.font_weight) {
+        return Err(AppError::Processing(
+            "text block font weight must be between 1 and 999".into(),
+        ));
+    }
+    if !text_block.font_size_px.is_finite()
+        || !text_block.line_height_px.is_finite()
+        || text_block.font_size_px <= 0.0
+        || text_block.line_height_px <= 0.0
+    {
+        return Err(AppError::Processing(
+            "text block font size and line height must be greater than 0".into(),
+        ));
+    }
+    if !text_block.max_width_percent.is_finite()
+        || !(1.0..=100.0).contains(&text_block.max_width_percent)
+    {
+        return Err(AppError::Processing(
+            "text block max width must be between 1 and 100 percent".into(),
+        ));
+    }
+    if !text_block.position_x_percent.is_finite()
+        || !text_block.position_y_percent.is_finite()
+        || !(0.0..=100.0).contains(&text_block.position_x_percent)
+        || !(0.0..=100.0).contains(&text_block.position_y_percent)
+    {
+        return Err(AppError::Processing(
+            "text block position must be between 0 and 100 percent".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{
         BackgroundColor, ColorManagementConfig, OutputSettings, ProcessingMode, RenderingIntent,
-        TargetProfileMode, WatermarkConfig,
+        TargetProfileMode, TextAlign, TextBlockConfig, TextFontStyle, WatermarkConfig,
     };
     use image::{DynamicImage, ImageBuffer};
     use std::fs;
@@ -590,10 +674,15 @@ mod tests {
             prefix: "output".into(),
             resample_size: 40,
             border_size: 60,
+            tile_border_px: None,
+            gap_x_px: 0,
+            gap_y_px: 0,
+            outer_border_px: None,
             final_size: 2100,
             dpi: 300,
             background_color: BackgroundColor::White,
             watermark: None,
+            text_block: None,
             overwrite: false,
             output_settings: OutputSettings {
                 jpeg_quality: 95,
@@ -691,6 +780,44 @@ mod tests {
     }
 
     #[test]
+    fn run_creates_text_block_output_with_custom_spacing() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        save_test_image(&image, 20, 10);
+
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.prefix = "texted".into();
+        config.tile_border_px = Some(8);
+        config.gap_x_px = 4;
+        config.gap_y_px = 6;
+        config.outer_border_px = Some(20);
+        config.text_block = Some(TextBlockConfig {
+            text: "Hello\n中文".into(),
+            font_family: "sans-serif".into(),
+            font_weight: 400,
+            font_style: TextFontStyle::Normal,
+            font_size_px: 28.0,
+            line_height_px: 34.0,
+            max_width_percent: 80.0,
+            align: TextAlign::Center,
+            text_rgba: [255, 255, 255, 255],
+            background_rgba: [0, 0, 0, 128],
+            padding_px: 4,
+            position_x_percent: 50.0,
+            position_y_percent: 50.0,
+        });
+
+        let report = run(&config).unwrap();
+
+        assert_eq!(
+            report.outputs,
+            vec![dir.path().join("texted_collage_final_watermarked.jpg")]
+        );
+        assert!(report.outputs[0].exists());
+        assert!(!dir.path().join("texted_collage_final.jpg").exists());
+    }
+
+    #[test]
     fn run_reports_partial_image_failures() {
         let dir = tempfile::tempdir().unwrap();
         let good = dir.path().join("good.jpg");
@@ -761,5 +888,43 @@ mod tests {
             report.outputs,
             report.processed_count
         );
+    }
+
+    #[test]
+    fn expected_output_path_uses_watermarked_name_for_text_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = base_config(dir.path().to_path_buf(), vec![dir.path().join("image.jpg")]);
+        config.text_block = Some(TextBlockConfig {
+            text: "caption".into(),
+            font_family: "sans-serif".into(),
+            font_weight: 400,
+            font_style: TextFontStyle::Normal,
+            font_size_px: 24.0,
+            line_height_px: 30.0,
+            max_width_percent: 50.0,
+            align: TextAlign::Center,
+            text_rgba: [255, 255, 255, 255],
+            background_rgba: [0, 0, 0, 0],
+            padding_px: 0,
+            position_x_percent: 50.0,
+            position_y_percent: 50.0,
+        });
+
+        assert_eq!(
+            expected_output_paths(&config),
+            vec![dir.path().join("output_collage_final_watermarked.jpg")]
+        );
+    }
+
+    #[test]
+    fn custom_outer_border_validation_overrides_dynamic_border() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        save_test_image(&image, 20, 10);
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.final_size = 80;
+        config.outer_border_px = Some(10);
+
+        assert!(validate_config(&config).is_ok());
     }
 }

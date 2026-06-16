@@ -33,6 +33,7 @@ thiserror = "2"
 
 # DPI 注入（JFIF APP0 density 字段）
 img-parts = "0.3"
+cosmic-text = "0.14"
 
 [profile.release]
 opt-level = 3

@@ -1,9 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CollageConfig, CollageResult, ProgressMessage } from '../main/rust-bridge'
+import type { FontFaceInfo } from '../main/font-metadata'
 
-// 暴露给渲染进程的安全 API
 contextBridge.exposeInMainWorld('electronAPI', {
-  // 文件对话框
   openImages: (): Promise<string[]> =>
     ipcRenderer.invoke('dialog:openImages'),
 
@@ -28,14 +27,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImageSize: (path: string): Promise<{ width: number; height: number } | null> =>
     ipcRenderer.invoke('image:size', path),
 
-  // 拼贴处理
+  listFonts: (): Promise<FontFaceInfo[]> =>
+    ipcRenderer.invoke('fonts:list'),
+
   startCollage: (config: CollageConfig): Promise<CollageResult> =>
     ipcRenderer.invoke('collage:start', config),
 
   cancelCollage: (): Promise<void> =>
     ipcRenderer.invoke('collage:cancel'),
 
-  // 监听进度（返回解除监听函数）
   onProgress: (callback: (msg: ProgressMessage) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, msg: ProgressMessage) => callback(msg)
     ipcRenderer.on('collage:progress', listener)
@@ -43,7 +43,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 })
 
-// TypeScript 类型声明（供渲染进程使用）
 export type ElectronAPI = {
   openImages: () => Promise<string[]>
   openWatermark: () => Promise<string | null>
@@ -53,6 +52,7 @@ export type ElectronAPI = {
   getThumbnail: (path: string) => Promise<string | null>
   getImageOrientation: (path: string) => Promise<number | null>
   getImageSize: (path: string) => Promise<{ width: number; height: number } | null>
+  listFonts: () => Promise<FontFaceInfo[]>
   startCollage: (config: CollageConfig) => Promise<CollageResult>
   cancelCollage: () => Promise<void>
   onProgress: (callback: (msg: ProgressMessage) => void) => () => void
