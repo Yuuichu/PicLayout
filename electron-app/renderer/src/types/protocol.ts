@@ -4,12 +4,11 @@ export interface CollageConfig {
   processing_mode: ProcessingMode
   output_dir: string
   prefix: string
-  resample_size: number
-  border_size: number
-  tile_border_px?: number | null
-  gap_x_px: number
-  gap_y_px: number
-  outer_border_px?: number | null
+  content_long_edge_percent: number
+  tile_border_percent: number
+  gap_x_percent: number
+  gap_y_percent: number
+  outer_border_percent?: number | null
   final_size: number
   dpi: number
   background_color: BackgroundColor

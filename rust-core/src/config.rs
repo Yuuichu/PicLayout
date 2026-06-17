@@ -24,6 +24,8 @@ pub struct CollageConfig {
     pub gap_y_px: u32,
     #[serde(default)]
     pub outer_border_px: Option<u32>,
+    #[serde(default, flatten)]
+    pub layout_percent: LayoutPercentConfig,
     #[serde(default = "default_final_size")]
     pub final_size: u32,
     #[serde(default = "default_dpi")]
@@ -56,12 +58,65 @@ impl CollageConfig {
     }
 
     pub fn tile_size(&self) -> Option<u32> {
-        match self.tile_border_px {
-            Some(border) => border
+        self.resolved_layout().map(|layout| layout.tile_size_px)
+    }
+
+    pub fn resolved_layout(&self) -> Option<ResolvedLayout> {
+        let content_long_edge_px = self.resolved_content_long_edge_px()?;
+        let tile_size_px = self.resolved_tile_size_px(content_long_edge_px)?;
+        let gap_x_px = self.resolved_gap_x_px()?;
+        let gap_y_px = self.resolved_gap_y_px()?;
+
+        Some(ResolvedLayout {
+            content_long_edge_px,
+            tile_size_px,
+            gap_x_px,
+            gap_y_px,
+        })
+    }
+
+    pub fn explicit_outer_border_px(&self) -> Option<u32> {
+        self.layout_percent
+            .outer_border_percent
+            .and_then(|percent| percent_to_px(self.final_size, percent))
+            .or(self.outer_border_px)
+    }
+
+    fn resolved_content_long_edge_px(&self) -> Option<u32> {
+        self.layout_percent
+            .content_long_edge_percent
+            .and_then(|percent| percent_to_px(self.final_size, percent))
+            .or(Some(self.resample_size))
+    }
+
+    fn resolved_tile_size_px(&self, content_long_edge_px: u32) -> Option<u32> {
+        if let Some(percent) = self.layout_percent.tile_border_percent {
+            let border_px = percent_to_px(self.final_size, percent)?;
+            return border_px
                 .checked_mul(2)
-                .and_then(|padding| self.resample_size.checked_add(padding)),
+                .and_then(|padding| content_long_edge_px.checked_add(padding));
+        }
+
+        match self.tile_border_px {
+            Some(border_px) => border_px
+                .checked_mul(2)
+                .and_then(|padding| content_long_edge_px.checked_add(padding)),
             None => Some(self.border_size),
         }
+    }
+
+    fn resolved_gap_x_px(&self) -> Option<u32> {
+        self.layout_percent
+            .gap_x_percent
+            .and_then(|percent| percent_to_px(self.final_size, percent))
+            .or(Some(self.gap_x_px))
+    }
+
+    fn resolved_gap_y_px(&self) -> Option<u32> {
+        self.layout_percent
+            .gap_y_percent
+            .and_then(|percent| percent_to_px(self.final_size, percent))
+            .or(Some(self.gap_y_px))
     }
 
     pub fn has_text_block(&self) -> bool {
@@ -73,6 +128,41 @@ impl CollageConfig {
     pub fn has_overlay(&self) -> bool {
         self.watermark.is_some() || self.has_text_block()
     }
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy)]
+pub struct LayoutPercentConfig {
+    #[serde(default)]
+    pub content_long_edge_percent: Option<f32>,
+    #[serde(default)]
+    pub tile_border_percent: Option<f32>,
+    #[serde(default)]
+    pub gap_x_percent: Option<f32>,
+    #[serde(default)]
+    pub gap_y_percent: Option<f32>,
+    #[serde(default)]
+    pub outer_border_percent: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedLayout {
+    pub content_long_edge_px: u32,
+    pub tile_size_px: u32,
+    pub gap_x_px: u32,
+    pub gap_y_px: u32,
+}
+
+pub fn percent_to_px(base_px: u32, percent: f32) -> Option<u32> {
+    if !percent.is_finite() || percent < 0.0 {
+        return None;
+    }
+
+    let value = base_px as f64 * percent as f64 / 100.0;
+    if value > u32::MAX as f64 {
+        return None;
+    }
+
+    Some(value.round() as u32)
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -400,5 +490,43 @@ mod tests {
         }));
 
         assert_eq!(config.tile_size(), Some(4500));
+    }
+
+    #[test]
+    fn percent_layout_fields_resolve_against_final_size() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "final_size": 10000,
+            "content_long_edge_percent": 40,
+            "tile_border_percent": 1,
+            "gap_x_percent": 2.5,
+            "gap_y_percent": 3
+        }));
+
+        assert_eq!(
+            config.resolved_layout(),
+            Some(ResolvedLayout {
+                content_long_edge_px: 4000,
+                tile_size_px: 4200,
+                gap_x_px: 250,
+                gap_y_px: 300,
+            })
+        );
+    }
+
+    #[test]
+    fn outer_border_percent_overrides_legacy_px() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "final_size": 20000,
+            "outer_border_px": 100,
+            "outer_border_percent": 10
+        }));
+
+        assert_eq!(config.explicit_outer_border_px(), Some(2000));
     }
 }

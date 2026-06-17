@@ -132,6 +132,7 @@ mod tests {
             gap_x_px: 0,
             gap_y_px: 0,
             outer_border_px: None,
+            layout_percent: Default::default(),
             final_size: 2100,
             dpi: 300,
             background_color: BackgroundColor::White,

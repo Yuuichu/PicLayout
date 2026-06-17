@@ -32,6 +32,7 @@
             type="range"
             min="10"
             max="300"
+            step="0.01"
             @input="save"
           />
           <input
@@ -39,6 +40,7 @@
             type="number"
             min="10"
             max="300"
+            step="0.01"
             class="number-input"
             @change="save"
           />
@@ -53,6 +55,7 @@
             type="range"
             min="0"
             max="100"
+            step="0.01"
             @input="save"
           />
           <input
@@ -60,6 +63,7 @@
             type="number"
             min="0"
             max="100"
+            step="0.01"
             class="number-input"
             @change="save"
           />
@@ -74,6 +78,7 @@
             type="range"
             min="0"
             max="100"
+            step="0.01"
             @input="save"
           />
           <input
@@ -81,6 +86,7 @@
             type="number"
             min="0"
             max="100"
+            step="0.01"
             class="number-input"
             @change="save"
           />

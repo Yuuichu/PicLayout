@@ -245,19 +245,17 @@ async function startCollage() {
 
   const clickedAt = performance.now()
   const s = store.settings
-  const tileSize = s.resampleSize + s.tileBorderPx * 2
   const config: CollageConfig = {
     image_paths: store.selectedFiles,
     image_rotations: store.selectedImageRotations(),
     processing_mode: s.processingMode,
     output_dir: s.outputDir,
     prefix: s.prefix || 'output',
-    resample_size: s.resampleSize,
-    border_size: tileSize,
-    tile_border_px: s.tileBorderPx,
-    gap_x_px: s.gapXPx,
-    gap_y_px: s.gapYPx,
-    outer_border_px: s.outerBorderMode === 'custom' ? s.outerBorderPx : null,
+    content_long_edge_percent: s.contentLongEdgePercent,
+    tile_border_percent: s.tileBorderPercent,
+    gap_x_percent: s.gapXPercent,
+    gap_y_percent: s.gapYPercent,
+    outer_border_percent: s.outerBorderMode === 'custom' ? s.outerBorderPercent : null,
     final_size: s.finalSize,
     dpi: s.dpi,
     background_color: s.backgroundColor,

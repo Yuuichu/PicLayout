@@ -71,7 +71,7 @@
 
         <div class="form-row compact-row">
           <label>最大宽度</label>
-          <input v-model.number="s.textBlock.max_width_percent" type="number" min="1" max="100" class="number-input" @change="save" />
+          <input v-model.number="s.textBlock.max_width_percent" type="number" min="1" max="100" step="0.01" class="number-input" @change="save" />
           <span class="hint">%</span>
         </div>
 
@@ -95,15 +95,15 @@
 
         <div class="form-row compact-row">
           <label>水平位置</label>
-          <input v-model.number="s.textBlock.position_x_percent" type="range" min="0" max="100" class="range-input" @input="save" />
-          <input v-model.number="s.textBlock.position_x_percent" type="number" min="0" max="100" class="number-input" @change="save" />
+          <input v-model.number="s.textBlock.position_x_percent" type="range" min="0" max="100" step="0.01" class="range-input" @input="save" />
+          <input v-model.number="s.textBlock.position_x_percent" type="number" min="0" max="100" step="0.01" class="number-input" @change="save" />
           <span class="hint">%</span>
         </div>
 
         <div class="form-row compact-row">
           <label>垂直位置</label>
-          <input v-model.number="s.textBlock.position_y_percent" type="range" min="0" max="100" class="range-input" @input="save" />
-          <input v-model.number="s.textBlock.position_y_percent" type="number" min="0" max="100" class="number-input" @change="save" />
+          <input v-model.number="s.textBlock.position_y_percent" type="range" min="0" max="100" step="0.01" class="range-input" @input="save" />
+          <input v-model.number="s.textBlock.position_y_percent" type="number" min="0" max="100" step="0.01" class="number-input" @change="save" />
           <span class="hint">%</span>
         </div>
       </div>

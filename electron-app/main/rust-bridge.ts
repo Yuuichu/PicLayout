@@ -9,6 +9,11 @@ export interface CollageConfig {
   processing_mode?: 'standard_high_quality' | 'maximum_quality' | 'fast_preview'
   output_dir: string
   prefix: string
+  content_long_edge_percent?: number
+  tile_border_percent?: number
+  gap_x_percent?: number
+  gap_y_percent?: number
+  outer_border_percent?: number | null
   resample_size?: number
   border_size?: number
   tile_border_px?: number | null

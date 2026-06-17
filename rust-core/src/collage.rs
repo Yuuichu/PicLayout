@@ -69,11 +69,17 @@ impl FinalCollageLayout {
             return Err(AppError::NoImagesProcessed);
         }
         let (grid_cols, grid_rows) = grid_shape(tile_count);
-        let tile_size = config
-            .tile_size()
-            .ok_or_else(|| AppError::Processing("tile size calculation overflowed".into()))?;
-        let (collage_width, collage_height) =
-            grid_dimensions(grid_cols, grid_rows, tile_size, config.gap_x_px, config.gap_y_px)?;
+        let layout = config
+            .resolved_layout()
+            .ok_or_else(|| AppError::Processing("layout size calculation overflowed".into()))?;
+        let tile_size = layout.tile_size_px;
+        let (collage_width, collage_height) = grid_dimensions(
+            grid_cols,
+            grid_rows,
+            tile_size,
+            layout.gap_x_px,
+            layout.gap_y_px,
+        )?;
         if collage_width > MAX_JPEG_DIMENSION || collage_height > MAX_JPEG_DIMENSION {
             return Err(AppError::Processing(format!(
                 "collage dimensions {}x{} px exceed JPEG limit {} px",
@@ -100,8 +106,8 @@ impl FinalCollageLayout {
             scale,
             outer_border,
             tile_size,
-            gap_x: config.gap_x_px,
-            gap_y: config.gap_y_px,
+            gap_x: layout.gap_x_px,
+            gap_y: layout.gap_y_px,
             canvas_width,
             canvas_height,
         })
@@ -390,6 +396,7 @@ mod tests {
             gap_x_px: 0,
             gap_y_px: 0,
             outer_border_px: None,
+            layout_percent: Default::default(),
             final_size: 10,
             dpi: 300,
             background_color: BackgroundColor::White,
@@ -443,6 +450,7 @@ mod tests {
             gap_x_px: 5,
             gap_y_px: 7,
             outer_border_px: Some(0),
+            layout_percent: Default::default(),
             final_size: 27,
             dpi: 300,
             background_color: BackgroundColor::White,

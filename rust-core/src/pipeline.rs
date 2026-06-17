@@ -11,7 +11,7 @@ use crate::{
         create_final_collage_image, grid_dimensions, grid_shape, FinalCollageLayout, ProcessedTile,
     },
     color,
-    config::{CollageConfig, TargetProfileMode},
+    config::{CollageConfig, ResolvedLayout, TargetProfileMode},
     error::AppError,
     image_loader::{ensure_rgba_allocation_safe, load_image},
     image_proc::{apply_manual_rotation, fit_long_edge, resize_high_quality_with_options},
@@ -144,20 +144,14 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     let mut timer = PipelineTimer::new(job_start);
     let total = config.image_paths.len();
     let planned_cols = (total as f64).sqrt().ceil() as u32;
-    let outer_border = config
-        .outer_border_px
-        .unwrap_or_else(|| calculate_dynamic_border(planned_cols));
+    let layout = resolve_layout(config)?;
+    let outer_border = resolve_outer_border(config, planned_cols);
     let final_layout = FinalCollageLayout::new(total as u32, config, outer_border)?;
 
-    progress::send(&ProgressMessage::JobStarted {
-        total,
-    });
+    progress::send(&ProgressMessage::JobStarted { total });
     progress::send(&ProgressMessage::StageChanged {
         stage: Stage::ProcessingImages,
-        message: format!(
-            "Processing {} images in parallel...",
-            total
-        ),
+        message: format!("Processing {} images in parallel...", total),
         elapsed_ms: timer.total_elapsed_ms(),
     });
 
@@ -191,13 +185,15 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
                     )?;
                     let rotated =
                         apply_manual_rotation(prepared, config.image_rotation_degrees(img_path));
-                    processing_metrics
-                        .add_color_orient(color_orient_started.elapsed().as_millis());
+                    processing_metrics.add_color_orient(color_orient_started.elapsed().as_millis());
 
                     let resize_started = Instant::now();
                     // Preserve the image-to-border ratio while resizing directly to the final tile.
-                    let (virtual_w, virtual_h) =
-                        fit_long_edge(rotated.width(), rotated.height(), config.resample_size)?;
+                    let (virtual_w, virtual_h) = fit_long_edge(
+                        rotated.width(),
+                        rotated.height(),
+                        layout.content_long_edge_px,
+                    )?;
                     let placement =
                         final_layout.tile_placement(image_index as u32, virtual_w, virtual_h);
                     let resampled = resize_high_quality_with_options(
@@ -334,6 +330,95 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     })
 }
 
+fn resolve_layout(config: &CollageConfig) -> Result<ResolvedLayout, AppError> {
+    config
+        .resolved_layout()
+        .ok_or_else(|| AppError::Processing("layout size calculation overflowed".into()))
+}
+
+fn resolve_outer_border(config: &CollageConfig, grid_cols: u32) -> u32 {
+    config
+        .explicit_outer_border_px()
+        .unwrap_or_else(|| calculate_dynamic_border(grid_cols, config.final_size))
+}
+
+fn validate_layout_percent_config(config: &CollageConfig) -> Result<(), AppError> {
+    validate_percent_range(
+        "content_long_edge_percent",
+        config.layout_percent.content_long_edge_percent,
+        0.0,
+        false,
+        100.0,
+        true,
+    )?;
+    validate_percent_range(
+        "tile_border_percent",
+        config.layout_percent.tile_border_percent,
+        0.0,
+        true,
+        50.0,
+        true,
+    )?;
+    validate_percent_range(
+        "gap_x_percent",
+        config.layout_percent.gap_x_percent,
+        0.0,
+        true,
+        100.0,
+        true,
+    )?;
+    validate_percent_range(
+        "gap_y_percent",
+        config.layout_percent.gap_y_percent,
+        0.0,
+        true,
+        100.0,
+        true,
+    )?;
+    validate_percent_range(
+        "outer_border_percent",
+        config.layout_percent.outer_border_percent,
+        0.0,
+        true,
+        50.0,
+        false,
+    )
+}
+
+fn validate_percent_range(
+    name: &str,
+    value: Option<f32>,
+    min: f32,
+    min_inclusive: bool,
+    max: f32,
+    max_inclusive: bool,
+) -> Result<(), AppError> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let min_ok = if min_inclusive {
+        value >= min
+    } else {
+        value > min
+    };
+    let max_ok = if max_inclusive {
+        value <= max
+    } else {
+        value < max
+    };
+
+    if value.is_finite() && min_ok && max_ok {
+        return Ok(());
+    }
+
+    let lower = if min_inclusive { ">=" } else { ">" };
+    let upper = if max_inclusive { "<=" } else { "<" };
+    Err(AppError::Processing(format!(
+        "{} must be {} {} and {} {}; got {}",
+        name, lower, min, upper, max, value
+    )))
+}
+
 fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
     let mut warnings = Vec::new();
     if config.image_paths.is_empty() {
@@ -406,26 +491,37 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
         )));
     }
 
-    if config.resample_size == 0 || config.final_size == 0 {
+    validate_layout_percent_config(config)?;
+
+    if config.final_size == 0 {
         return Err(AppError::Processing(
-            "size parameters must be greater than 0".into(),
+            "final image size must be greater than 0".into(),
         ));
     }
-    let tile_size = config
-        .tile_size()
-        .ok_or_else(|| AppError::Processing("tile size calculation overflowed".into()))?;
+    let layout = resolve_layout(config)?;
+    let tile_size = layout.tile_size_px;
     if tile_size == 0 {
-        return Err(AppError::Processing("tile size must be greater than 0".into()));
+        return Err(AppError::Processing(
+            "tile size must be greater than 0".into(),
+        ));
     }
-    if config.tile_border_px.is_none() && config.border_size == 0 {
+    if layout.content_long_edge_px == 0 {
+        return Err(AppError::Processing(
+            "content long edge must be greater than 0".into(),
+        ));
+    }
+    if config.layout_percent.tile_border_percent.is_none()
+        && config.tile_border_px.is_none()
+        && config.border_size == 0
+    {
         return Err(AppError::Processing(
             "legacy tile border size must be greater than 0".into(),
         ));
     }
-    if config.resample_size > tile_size {
+    if layout.content_long_edge_px > tile_size {
         return Err(AppError::Processing(format!(
             "resample size {} px cannot exceed tile border size {} px",
-            config.resample_size, tile_size
+            layout.content_long_edge_px, tile_size
         )));
     }
     if config.final_size > MAX_JPEG_DIMENSION {
@@ -453,8 +549,8 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
         planned_cols,
         planned_rows,
         tile_size,
-        config.gap_x_px,
-        config.gap_y_px,
+        layout.gap_x_px,
+        layout.gap_y_px,
     )?;
     if collage_width > MAX_JPEG_DIMENSION || collage_height > MAX_JPEG_DIMENSION {
         return Err(AppError::Processing(format!(
@@ -463,17 +559,14 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
         )));
     }
 
-    let outer_border = config
-        .outer_border_px
-        .unwrap_or_else(|| calculate_dynamic_border(planned_cols));
+    let outer_border = resolve_outer_border(config, planned_cols);
     let double_outer_border = outer_border
         .checked_mul(2)
         .ok_or_else(|| AppError::Processing("outer border calculation overflowed".into()))?;
     if config.final_size <= double_outer_border {
         return Err(AppError::Processing(format!(
             "final image size {} px is too small; current image count requires more than {} px",
-            config.final_size,
-            double_outer_border
+            config.final_size, double_outer_border
         )));
     }
     ensure_rgba_allocation_safe(config.final_size, config.final_size, "final output")?;
@@ -566,7 +659,11 @@ fn processing_thread_count(config: &CollageConfig) -> usize {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    let memory_sensitive_cap = if config.resample_size >= 3500 || config.image_paths.len() > 20 {
+    let content_long_edge_px = config
+        .resolved_layout()
+        .map(|layout| layout.content_long_edge_px)
+        .unwrap_or(config.resample_size);
+    let memory_sensitive_cap = if content_long_edge_px >= 3500 || config.image_paths.len() > 20 {
         4
     } else {
         8
@@ -577,24 +674,31 @@ fn processing_thread_count(config: &CollageConfig) -> usize {
 fn estimate_pipeline_rgba_bytes(config: &CollageConfig) -> u64 {
     let final_canvas = config.final_size as u64 * config.final_size as u64 * 4;
     let (planned_cols, planned_rows) = grid_shape(config.image_paths.len() as u32);
-    let outer_border = config
-        .outer_border_px
-        .unwrap_or_else(|| calculate_dynamic_border(planned_cols));
-    let tile_size = config.tile_size().unwrap_or(config.border_size).max(1);
+    let outer_border = resolve_outer_border(config, planned_cols);
+    let layout = config.resolved_layout().unwrap_or(ResolvedLayout {
+        content_long_edge_px: config.resample_size,
+        tile_size_px: config.border_size,
+        gap_x_px: config.gap_x_px,
+        gap_y_px: config.gap_y_px,
+    });
+    let tile_size = layout.tile_size_px.max(1);
     let (grid_width, grid_height) = grid_dimensions(
         planned_cols,
         planned_rows,
         tile_size,
-        config.gap_x_px,
-        config.gap_y_px,
+        layout.gap_x_px,
+        layout.gap_y_px,
     )
-    .unwrap_or((planned_cols.saturating_mul(tile_size), planned_rows.saturating_mul(tile_size)));
+    .unwrap_or((
+        planned_cols.saturating_mul(tile_size),
+        planned_rows.saturating_mul(tile_size),
+    ));
     let inner_size = config
         .final_size
         .saturating_sub(outer_border.saturating_mul(2))
         .max(1);
     let scale = inner_size as f64 / grid_width.max(grid_height).max(1) as f64;
-    let max_tile_edge = (config.resample_size as f64 * scale).ceil().max(1.0) as u64;
+    let max_tile_edge = (layout.content_long_edge_px as f64 * scale).ceil().max(1.0) as u64;
     let per_tile = max_tile_edge * max_tile_edge * 4;
     let tile_cache = per_tile.saturating_mul(config.image_paths.len() as u64);
     final_canvas.saturating_add(tile_cache)
@@ -657,8 +761,9 @@ fn validate_text_block(text_block: &crate::config::TextBlockConfig) -> Result<()
 mod tests {
     use super::*;
     use crate::config::{
-        BackgroundColor, ColorManagementConfig, OutputSettings, ProcessingMode, RenderingIntent,
-        TargetProfileMode, TextAlign, TextBlockConfig, TextFontStyle, WatermarkConfig,
+        BackgroundColor, ColorManagementConfig, LayoutPercentConfig, OutputSettings,
+        ProcessingMode, RenderingIntent, TargetProfileMode, TextAlign, TextBlockConfig,
+        TextFontStyle, WatermarkConfig,
     };
     use image::{DynamicImage, ImageBuffer};
     use std::fs;
@@ -678,6 +783,7 @@ mod tests {
             gap_x_px: 0,
             gap_y_px: 0,
             outer_border_px: None,
+            layout_percent: Default::default(),
             final_size: 2100,
             dpi: 300,
             background_color: BackgroundColor::White,
@@ -926,5 +1032,61 @@ mod tests {
         config.outer_border_px = Some(10);
 
         assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn percent_layout_config_runs_pipeline() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.jpg");
+        let second = dir.path().join("second.jpg");
+        save_test_image(&first, 20, 10);
+        save_test_image(&second, 10, 20);
+
+        let mut config = base_config(dir.path().to_path_buf(), vec![first, second]);
+        config.prefix = "percent".into();
+        config.final_size = 1000;
+        config.layout_percent = LayoutPercentConfig {
+            content_long_edge_percent: Some(40.0),
+            tile_border_percent: Some(1.0),
+            gap_x_percent: Some(0.0),
+            gap_y_percent: Some(0.0),
+            outer_border_percent: Some(10.0),
+        };
+
+        let report = run(&config).unwrap();
+
+        assert_eq!(report.processed_count, 2);
+        assert_eq!(
+            report.outputs,
+            vec![dir.path().join("percent_collage_final.jpg")]
+        );
+        assert!(report.outputs[0].exists());
+    }
+
+    #[test]
+    fn percent_layout_validation_rejects_out_of_range_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        save_test_image(&image, 20, 10);
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.layout_percent.content_long_edge_percent = Some(0.0);
+
+        let err = validate_config(&config).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("content_long_edge_percent must be > 0"));
+    }
+
+    #[test]
+    fn dynamic_outer_border_scales_with_final_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        save_test_image(&image, 20, 10);
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.final_size = 20_000;
+
+        assert_eq!(resolve_outer_border(&config, 2), 2000);
+        assert_eq!(resolve_outer_border(&config, 10), 400);
     }
 }

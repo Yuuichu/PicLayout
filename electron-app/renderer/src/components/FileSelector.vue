@@ -104,7 +104,7 @@
                 class="thumb-img"
                 :src="store.thumbnails[f]!"
                 :alt="basename(f)"
-                :style="thumbnailImageStyle(f)"
+                :style="[thumbImagePlacementStyle(f, i), thumbnailImageStyle(f)]"
               />
               <span v-else class="thumb-fallback">加载中</span>
             </div>
@@ -248,6 +248,12 @@ import {
 } from 'lucide-vue-next'
 import { useAppStore } from '../stores/appStore'
 import { BACKGROUND_COLOR_OPTIONS } from '../types/protocol'
+import {
+  computePreviewLayout,
+  computeTileFrame,
+  computeTilePlacement,
+  type ImageSizeLike,
+} from '../utils/previewLayout'
 
 const props = withDefaults(defineProps<{
   variant?: 'task' | 'viewer' | 'filmstrip'
@@ -315,38 +321,16 @@ const canvasMeta = computed(() => {
 })
 
 const previewGeometry = computed(() => {
-  const cols = gridCols.value
-  const rows = gridRows.value
-  const tileSize = Math.max(1, (s.resampleSize || 1) + Math.max(0, s.tileBorderPx || 0) * 2)
-  const gapX = Math.max(0, s.gapXPx || 0)
-  const gapY = Math.max(0, s.gapYPx || 0)
-  const gridWidth = Math.max(1, cols * tileSize + Math.max(0, cols - 1) * gapX)
-  const gridHeight = Math.max(1, rows * tileSize + Math.max(0, rows - 1) * gapY)
-  const border = s.outerBorderMode === 'custom'
-    ? Math.max(0, s.outerBorderPx || 0)
-    : calculateDynamicBorder(cols)
-  const finalSize = Math.max(1, s.finalSize || 1)
-  const innerSize = Math.max(1, finalSize - border * 2)
-  const scale = innerSize / Math.max(gridWidth, gridHeight)
-  const scaledWidth = Math.max(1, gridWidth * scale)
-  const scaledHeight = Math.max(1, gridHeight * scale)
-  const canvasWidth = scaledWidth + border * 2
-  const canvasHeight = scaledHeight + border * 2
-
-  return {
-    cols,
-    rows,
-    border,
-    tileSize,
-    gapX,
-    gapY,
-    gridWidth,
-    gridHeight,
-    scaledWidth,
-    scaledHeight,
-    canvasWidth,
-    canvasHeight,
-  }
+  return computePreviewLayout({
+    imageCount: store.selectedFiles.length,
+    finalSize: s.finalSize,
+    contentLongEdgePercent: s.contentLongEdgePercent,
+    tileBorderPercent: s.tileBorderPercent,
+    gapXPercent: s.gapXPercent,
+    gapYPercent: s.gapYPercent,
+    outerBorderMode: s.outerBorderMode,
+    outerBorderPercent: s.outerBorderPercent,
+  })
 })
 
 const previewFrameStyle = computed(() => {
@@ -378,28 +362,33 @@ const previewDisplayScale = computed(() => {
 })
 
 const thumbGridStyle = computed(() => {
-  const geom = previewGeometry.value
-
   return {
-    left: `${(geom.border / geom.canvasWidth) * 100}%`,
-    top: `${(geom.border / geom.canvasHeight) * 100}%`,
-    width: `${(geom.scaledWidth / geom.canvasWidth) * 100}%`,
-    height: `${(geom.scaledHeight / geom.canvasHeight) * 100}%`,
+    inset: '0',
   }
 })
 
 function thumbTileStyle(index: number) {
   const geom = previewGeometry.value
-  const col = index % geom.cols
-  const row = Math.floor(index / geom.cols)
-  const x = col * (geom.tileSize + geom.gapX)
-  const y = row * (geom.tileSize + geom.gapY)
+  const tile = computeTileFrame(geom, index)
 
   return {
-    left: `${(x / geom.gridWidth) * 100}%`,
-    top: `${(y / geom.gridHeight) * 100}%`,
-    width: `${(geom.tileSize / geom.gridWidth) * 100}%`,
-    height: `${(geom.tileSize / geom.gridHeight) * 100}%`,
+    left: `${(tile.x / geom.canvasWidth) * 100}%`,
+    top: `${(tile.y / geom.canvasHeight) * 100}%`,
+    width: `${(tile.width / geom.canvasWidth) * 100}%`,
+    height: `${(tile.height / geom.canvasHeight) * 100}%`,
+  }
+}
+
+function thumbImagePlacementStyle(path: string, index: number) {
+  const geom = previewGeometry.value
+  const tile = computeTileFrame(geom, index)
+  const image = computeTilePlacement(geom, index, previewImageSize(path))
+
+  return {
+    left: `${((image.x - tile.x) / tile.width) * 100}%`,
+    top: `${((image.y - tile.y) / tile.height) * 100}%`,
+    width: `${(image.width / tile.width) * 100}%`,
+    height: `${(image.height / tile.height) * 100}%`,
   }
 }
 
@@ -516,6 +505,21 @@ function thumbnailImageStyle(path: string) {
   }
 }
 
+function previewImageSize(path: string): ImageSizeLike | null {
+  const size = store.imageSizes[path]
+  if (!size) return null
+
+  const manualRotation = store.getImageRotation(path)
+  if (manualRotation === 90 || manualRotation === 270) {
+    return {
+      width: size.height,
+      height: size.width,
+    }
+  }
+
+  return size
+}
+
 function exifOrientationTransform(orientation: number | null): string {
   switch (orientation) {
     case 2:
@@ -571,12 +575,6 @@ async function openOutputDir() {
   }
 }
 
-function calculateDynamicBorder(cols: number): number {
-  if (cols >= 10) return 200
-  if (cols <= 2) return 1000
-  return 200 + (1000 - 200) * (10 - cols) / 8
-}
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min))
 }
@@ -599,6 +597,7 @@ watch(
   ({ files, watermarkEnabled, watermarkPath }) => {
     for (const file of files) {
       void store.ensureThumbnail(file)
+      void store.ensureImageSize(file)
     }
     if (watermarkEnabled && watermarkPath) {
       void store.ensureThumbnail(watermarkPath)
@@ -807,6 +806,7 @@ onBeforeUnmount(() => {
 }
 
 .thumb-frame {
+  position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -814,10 +814,9 @@ onBeforeUnmount(() => {
 }
 
 .thumb-img {
-  width: 100%;
-  height: 100%;
+  position: absolute;
   display: block;
-  object-fit: contain;
+  object-fit: fill;
   transform-origin: center;
   transition: transform 0.15s ease;
 }

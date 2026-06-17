@@ -23,13 +23,13 @@ interface ImageSize {
 
 interface Settings {
   maxImages: number
-  resampleSize: number
-  borderSize: number
-  tileBorderPx: number
-  gapXPx: number
-  gapYPx: number
+  contentLongEdgePercent: number
+  tileBorderPercent: number
+  imageGapPercent: number
+  gapXPercent: number
+  gapYPercent: number
   outerBorderMode: 'auto' | 'custom'
-  outerBorderPx: number
+  outerBorderPercent: number
   finalSize: number
   dpi: number
   backgroundColor: BackgroundColor
@@ -54,6 +54,15 @@ type AppTheme = 'dark' | 'light'
 interface UiState {
   theme: AppTheme
   filmstripCollapsed: boolean
+}
+
+interface LegacyLayoutSettings {
+  resampleSize?: number
+  borderSize?: number
+  tileBorderPx?: number
+  gapXPx?: number
+  gapYPx?: number
+  outerBorderPx?: number
 }
 
 function loadSettings(): Settings {
@@ -93,7 +102,10 @@ function loadUiState(): UiState {
   }
 }
 
-function normalizeQualitySettings(settings: Settings, parsed: Partial<Settings> & { processingMode?: string }) {
+function normalizeQualitySettings(
+  settings: Settings,
+  parsed: Omit<Partial<Settings>, 'processingMode'> & { processingMode?: string }
+) {
   const storedMode = parsed.processingMode
   if (!storedMode) {
     settings.processingMode = 'standard_high_quality'
@@ -123,13 +135,13 @@ function normalizeQualitySettings(settings: Settings, parsed: Partial<Settings> 
 function defaultSettings(): Settings {
   return {
     maxImages: 40,
-    resampleSize: 4000,
-    borderSize: 4200,
-    tileBorderPx: 100,
-    gapXPx: 0,
-    gapYPx: 0,
+    contentLongEdgePercent: 40,
+    tileBorderPercent: 1,
+    imageGapPercent: 0,
+    gapXPercent: 0,
+    gapYPercent: 0,
     outerBorderMode: 'auto',
-    outerBorderPx: 1000,
+    outerBorderPercent: 10,
     finalSize: 10000,
     dpi: 300,
     backgroundColor: 'white',
@@ -169,17 +181,90 @@ function defaultSettings(): Settings {
   }
 }
 
-function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings>) {
-  if (parsed.tileBorderPx === undefined) {
-    const resampleSize = Number(parsed.resampleSize ?? settings.resampleSize)
-    const borderSize = Number(parsed.borderSize ?? settings.borderSize)
-    settings.tileBorderPx = Math.max(0, Math.round((borderSize - resampleSize) / 2))
+function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings> & LegacyLayoutSettings) {
+  const finalSize = normalizeNumber(settings.finalSize, 10000)
+  settings.finalSize = Math.min(30000, Math.max(1000, Math.round(finalSize)))
+
+  if (parsed.contentLongEdgePercent === undefined) {
+    settings.contentLongEdgePercent = percentFromPx(
+      normalizeNumber(parsed.resampleSize, 4000),
+      settings.finalSize
+    )
   }
-  settings.borderSize = settings.resampleSize + settings.tileBorderPx * 2
-  settings.gapXPx = Math.max(0, settings.gapXPx || 0)
-  settings.gapYPx = Math.max(0, settings.gapYPx || 0)
+
+  if (parsed.tileBorderPercent === undefined) {
+    const resampleSize = normalizeNumber(parsed.resampleSize, 4000)
+    const borderSize = normalizeNumber(parsed.borderSize, resampleSize + 200)
+    const legacyTileBorderPx =
+      parsed.tileBorderPx === undefined
+        ? Math.max(0, (borderSize - resampleSize) / 2)
+        : normalizeNumber(parsed.tileBorderPx, 100)
+    settings.tileBorderPercent = percentFromPx(legacyTileBorderPx, settings.finalSize)
+  }
+
+  if (parsed.gapXPercent === undefined) {
+    settings.gapXPercent = percentFromPx(normalizeNumber(parsed.gapXPx, 0), settings.finalSize)
+  }
+  if (parsed.gapYPercent === undefined) {
+    settings.gapYPercent = percentFromPx(normalizeNumber(parsed.gapYPx, 0), settings.finalSize)
+  }
+  if (parsed.imageGapPercent === undefined) {
+    settings.imageGapPercent = Math.max(settings.gapXPercent, settings.gapYPercent)
+  }
+  if (
+    parsed.tileBorderPercent === undefined &&
+    parsed.tileBorderPx === undefined &&
+    settings.tileBorderPercent <= 0
+  ) {
+    settings.tileBorderPercent = roundPercent(settings.imageGapPercent / 2)
+  }
+  if (parsed.outerBorderPercent === undefined) {
+    settings.outerBorderPercent = percentFromPx(
+      normalizeNumber(parsed.outerBorderPx, 1000),
+      settings.finalSize
+    )
+  }
+
   settings.outerBorderMode = settings.outerBorderMode === 'custom' ? 'custom' : 'auto'
-  settings.outerBorderPx = Math.max(0, settings.outerBorderPx || 0)
+  sanitizeLayoutSettings(settings)
+  dropLegacyLayoutSettings(settings as Settings & LegacyLayoutSettings)
+}
+
+function sanitizeLayoutSettings(settings: Settings) {
+  settings.contentLongEdgePercent = clampPercent(settings.contentLongEdgePercent, 0.01, 100, 40)
+  settings.tileBorderPercent = clampPercent(settings.tileBorderPercent, 0, 50, 1)
+  settings.imageGapPercent = 0
+  settings.gapXPercent = 0
+  settings.gapYPercent = 0
+  settings.outerBorderPercent = clampPercent(settings.outerBorderPercent, 0, 49.99, 10)
+  settings.finalSize = Math.min(30000, Math.max(1000, Math.round(normalizeNumber(settings.finalSize, 10000))))
+}
+
+function percentFromPx(px: number, finalSize: number): number {
+  return roundPercent((Math.max(0, px) / Math.max(1, finalSize)) * 100)
+}
+
+function roundPercent(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function clampPercent(value: number, min: number, max: number, fallback: number): number {
+  const normalized = normalizeNumber(value, fallback)
+  return roundPercent(Math.min(max, Math.max(min, normalized)))
+}
+
+function normalizeNumber(value: unknown, fallback: number): number {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : fallback
+}
+
+function dropLegacyLayoutSettings(settings: Settings & LegacyLayoutSettings) {
+  delete settings.resampleSize
+  delete settings.borderSize
+  delete settings.tileBorderPx
+  delete settings.gapXPx
+  delete settings.gapYPx
+  delete settings.outerBorderPx
 }
 
 export const useAppStore = defineStore('app', () => {
@@ -188,7 +273,7 @@ export const useAppStore = defineStore('app', () => {
   const ui = reactive<UiState>(loadUiState())
 
   function saveSettings() {
-    settings.borderSize = settings.resampleSize + settings.tileBorderPx * 2
+    sanitizeLayoutSettings(settings)
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   }
 
