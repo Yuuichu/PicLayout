@@ -4,6 +4,7 @@ import type {
   BackgroundColor,
   FailedImage,
   ImageRotationDegrees,
+  PreviewResult,
   ProcessingMode,
   RenderingIntent,
   StageTiming,
@@ -21,7 +22,7 @@ interface ImageSize {
   height: number
 }
 
-interface Settings {
+export interface Settings {
   maxImages: number
   contentLongEdgePercent: number
   tileBorderPercent: number
@@ -50,10 +51,37 @@ interface Settings {
 }
 
 type AppTheme = 'dark' | 'light'
+type RenderedPreviewSource = 'precise' | 'output'
 
 interface UiState {
   theme: AppTheme
   filmstripCollapsed: boolean
+}
+
+interface RenderedPreviewState extends PreviewResult {
+  signature: string
+  source: RenderedPreviewSource | null
+  rendering: boolean
+  errorMessage: string
+}
+
+function emptyRenderedPreview(): RenderedPreviewState {
+  return {
+    data_url: '',
+    width: 0,
+    height: 0,
+    final_width: 0,
+    final_height: 0,
+    processed_count: 0,
+    failed_images: [],
+    warnings: [],
+    elapsed_ms: 0,
+    stage_timings: [],
+    signature: '',
+    source: null,
+    rendering: false,
+    errorMessage: '',
+  }
 }
 
 interface LegacyLayoutSettings {
@@ -433,6 +461,7 @@ export const useAppStore = defineStore('app', () => {
   const cancelledMessage = ref('')
   const partialOutputs = ref<string[]>([])
   const errorMessage = ref('')
+  const renderedPreview = reactive<RenderedPreviewState>(emptyRenderedPreview())
 
   function resetProgress() {
     progress.value = 0
@@ -462,6 +491,32 @@ export const useAppStore = defineStore('app', () => {
     const next = stageTimings.value.filter((item) => item.stage !== timing.stage)
     next.push(timing)
     stageTimings.value = next
+  }
+
+  function setRenderedPreview(result: PreviewResult, signature: string, source: RenderedPreviewSource) {
+    Object.assign(renderedPreview, {
+      ...result,
+      signature,
+      source,
+      rendering: false,
+      errorMessage: '',
+    })
+  }
+
+  function clearRenderedPreview() {
+    Object.assign(renderedPreview, emptyRenderedPreview())
+  }
+
+  function setRenderedPreviewRendering(rendering: boolean) {
+    renderedPreview.rendering = rendering
+    if (rendering) {
+      renderedPreview.errorMessage = ''
+    }
+  }
+
+  function setRenderedPreviewError(message: string) {
+    renderedPreview.rendering = false
+    renderedPreview.errorMessage = message
   }
 
   return {
@@ -499,9 +554,14 @@ export const useAppStore = defineStore('app', () => {
     cancelledMessage,
     partialOutputs,
     errorMessage,
+    renderedPreview,
     resetProgress,
     setProgress,
     setElapsed,
     setStageTiming,
+    setRenderedPreview,
+    clearRenderedPreview,
+    setRenderedPreviewRendering,
+    setRenderedPreviewError,
   }
 })

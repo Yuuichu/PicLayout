@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { listSystemFonts } from './font-metadata'
 import { readExifOrientation, sizeWithExifOrientation } from './image-metadata'
-import { rustBridge, CollageConfig, ProgressMessage } from './rust-bridge'
+import { rustBridge, CollageConfig, PreviewImageResult, ProgressMessage } from './rust-bridge'
 
 export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('dialog:openImages', async () => {
@@ -68,6 +68,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return sizeWithExifOrientation(img.getSize(), readExifOrientation(path))
   })
 
+  ipcMain.handle('image:previewDataUrl', async (_event, path: string, longEdge = 1800) => {
+    return imagePreviewDataUrl(path, longEdge)
+  })
+
   ipcMain.handle('fonts:list', async () => {
     return listSystemFonts()
   })
@@ -84,7 +88,39 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return rustBridge.start(config, onProgress)
   })
 
+  ipcMain.handle('preview:render', async (_event, config: CollageConfig, longEdge = 1800) => {
+    if (rustBridge.isRunning()) {
+      throw new Error('Another PicLayout task is already running')
+    }
+
+    return rustBridge.renderPreview(config, longEdge)
+  })
+
   ipcMain.handle('collage:cancel', () => {
     rustBridge.cancel()
   })
+}
+
+function imagePreviewDataUrl(path: string, longEdge: number): PreviewImageResult | null {
+  const img = nativeImage.createFromPath(path)
+  if (img.isEmpty()) return null
+
+  const { width, height } = img.getSize()
+  if (width <= 0 || height <= 0) return null
+
+  const maxLongEdge = Math.max(1, Math.round(longEdge))
+  const resizeOptions =
+    width >= height
+      ? { width: Math.min(width, maxLongEdge), quality: 'best' as const }
+      : { height: Math.min(height, maxLongEdge), quality: 'best' as const }
+  const resized = img.resize(resizeOptions)
+  const resizedSize = resized.getSize()
+
+  return {
+    data_url: resized.toDataURL(),
+    width: resizedSize.width,
+    height: resizedSize.height,
+    final_width: width,
+    final_height: height,
+  }
 }

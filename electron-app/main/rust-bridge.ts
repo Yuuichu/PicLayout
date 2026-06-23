@@ -1,7 +1,8 @@
 import { spawn, ChildProcess } from 'child_process'
 import { dirname, join } from 'path'
 import { app } from 'electron'
-import { existsSync, readdirSync, unlinkSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync } from 'fs'
+import { tmpdir } from 'os'
 
 export interface CollageConfig {
   image_paths: string[]
@@ -89,6 +90,22 @@ export interface CollageResult {
   stage_timings: StageTiming[]
 }
 
+export interface PreviewImageResult {
+  data_url: string
+  width: number
+  height: number
+  final_width: number
+  final_height: number
+}
+
+export interface PreviewResult extends PreviewImageResult {
+  processed_count: number
+  failed_images: FailedImage[]
+  warnings: string[]
+  elapsed_ms: number
+  stage_timings: StageTiming[]
+}
+
 export type ProgressMessage =
   | { type: 'job_started'; total: number }
   | { type: 'image_processed'; index: number; total: number; elapsed_ms: number }
@@ -103,6 +120,19 @@ export type ProgressMessage =
   | {
       type: 'completed'
       outputs: string[]
+      processed_count: number
+      failed_images: FailedImage[]
+      warnings: string[]
+      elapsed_ms: number
+      stage_timings: StageTiming[]
+    }
+  | {
+      type: 'preview_completed'
+      output_path: string
+      width: number
+      height: number
+      final_width: number
+      final_height: number
       processed_count: number
       failed_images: FailedImage[]
       warnings: string[]
@@ -295,6 +325,127 @@ export class RustBridge {
         }
       })
     })
+  }
+
+  async renderPreview(config: CollageConfig, previewLongEdge = 1800): Promise<PreviewResult> {
+    if (this.process) {
+      throw new Error('Another PicLayout task is already running')
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), 'piclayout-preview-'))
+    const previewPath = join(tempDir, 'preview.png')
+    const normalizedLongEdge = Math.max(1, Math.round(previewLongEdge))
+
+    try {
+      return await new Promise((resolve, reject) => {
+        const exePath = getRustCorePath()
+        const rustBuild = describeRustCoreBuild(exePath)
+        console.info(`[rust-core] using ${rustBuild} sidecar for preview: ${exePath}`)
+        const startedAt = Date.now()
+        this.cancelled = false
+        this.expectedOutputs = []
+        let settled = false
+
+        const wallElapsed = () => Date.now() - startedAt
+
+        const resolveOnce = (result: PreviewResult) => {
+          if (settled) return
+          settled = true
+          resolve(result)
+        }
+
+        const rejectOnce = (error: Error) => {
+          if (settled) return
+          settled = true
+          reject(error)
+        }
+
+        const handleLine = (line: string) => {
+          if (!line.trim()) return
+          try {
+            const msg: ProgressMessage = JSON.parse(line)
+            if (msg.type === 'preview_completed') {
+              const data = readFileSync(msg.output_path)
+              resolveOnce({
+                data_url: `data:image/png;base64,${data.toString('base64')}`,
+                width: msg.width,
+                height: msg.height,
+                final_width: msg.final_width,
+                final_height: msg.final_height,
+                processed_count: msg.processed_count,
+                failed_images: msg.failed_images,
+                warnings: msg.warnings,
+                elapsed_ms: msg.elapsed_ms,
+                stage_timings: msg.stage_timings,
+              })
+            } else if (msg.type === 'error') {
+              rejectOnce(new Error(msg.message))
+            }
+          } catch (e) {
+            console.error('failed to parse rust-core preview message:', line, e)
+            rejectOnce(e instanceof Error ? e : new Error(String(e)))
+          }
+        }
+
+        this.process = spawn(exePath, [
+          '--render-preview',
+          previewPath,
+          String(normalizedLongEdge),
+        ], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        })
+
+        this.process.stdin!.write(JSON.stringify(config) + '\n')
+        this.process.stdin!.end()
+
+        let buffer = ''
+
+        this.process.stdout!.on('data', (data: Buffer) => {
+          buffer += data.toString()
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+
+          for (const line of lines) {
+            handleLine(line)
+          }
+        })
+
+        this.process.stderr!.on('data', (data: Buffer) => {
+          console.error('[rust-core stderr]', data.toString())
+        })
+
+        this.process.on('error', (err) => {
+          this.process = null
+          this.expectedOutputs = []
+          this.cancelled = false
+          rejectOnce(new Error(`Failed to start rust-core: ${err.message}\nPath: ${exePath}`))
+        })
+
+        this.process.on('close', (code) => {
+          handleLine(buffer)
+          buffer = ''
+
+          const wasCancelled = this.cancelled
+          this.process = null
+          this.expectedOutputs = []
+          this.cancelled = false
+
+          if (wasCancelled) {
+            rejectOnce(new Error('Preview render was cancelled'))
+            return
+          }
+          if (code !== 0 && code !== null) {
+            rejectOnce(new Error(`rust-core exited with non-zero code ${code}`))
+            return
+          }
+          if (!settled) {
+            rejectOnce(new Error(`rust-core exited without preview_completed (${wallElapsed()}ms)`))
+          }
+        })
+      })
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
   }
 
   cancel(): void {

@@ -51,6 +51,18 @@ pub enum ProgressMessage {
         elapsed_ms: u128,
         stage_timings: Vec<StageTiming>,
     },
+    PreviewCompleted {
+        output_path: String,
+        width: u32,
+        height: u32,
+        final_width: u32,
+        final_height: u32,
+        processed_count: usize,
+        failed_images: Vec<FailedImage>,
+        warnings: Vec<String>,
+        elapsed_ms: u128,
+        stage_timings: Vec<StageTiming>,
+    },
     #[allow(dead_code)]
     Cancelled {
         message: String,

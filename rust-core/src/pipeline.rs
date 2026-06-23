@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+use image::{imageops::FilterType, DynamicImage};
 use rayon::prelude::*;
 
 use crate::{
@@ -32,6 +33,30 @@ const HARD_ESTIMATED_RGBA_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 #[derive(Debug)]
 pub struct PipelineReport {
     pub outputs: Vec<PathBuf>,
+    pub processed_count: usize,
+    pub failed_images: Vec<FailedImage>,
+    pub warnings: Vec<String>,
+    pub elapsed_ms: u128,
+    pub stage_timings: Vec<StageTiming>,
+}
+
+#[derive(Debug)]
+pub struct RenderedImageReport {
+    pub image: DynamicImage,
+    pub processed_count: usize,
+    pub failed_images: Vec<FailedImage>,
+    pub warnings: Vec<String>,
+    pub elapsed_ms: u128,
+    pub stage_timings: Vec<StageTiming>,
+}
+
+#[derive(Debug)]
+pub struct PreviewReport {
+    pub output_path: PathBuf,
+    pub width: u32,
+    pub height: u32,
+    pub final_width: u32,
+    pub final_height: u32,
     pub processed_count: usize,
     pub failed_images: Vec<FailedImage>,
     pub warnings: Vec<String>,
@@ -137,10 +162,118 @@ fn stage_key(stage: Stage) -> &'static str {
 }
 
 pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
-    let job_start = Instant::now();
-    let mut warnings = validate_config(config)?;
+    let mut rendered = render_final_image(config, true)?;
     let target_profile = color::load_target_profile(config)?;
     let output_icc = target_profile.icc.as_deref();
+    let mut outputs = Vec::new();
+    let save_started = Instant::now();
+
+    progress::send(&ProgressMessage::StageChanged {
+        stage: Stage::SavingOutput,
+        message: "Saving JPEG output...".into(),
+        elapsed_ms: rendered.elapsed_ms,
+    });
+    if config.has_overlay() {
+        let wm_path = config
+            .output_dir
+            .join(format!("{}_collage_final_watermarked.jpg", config.prefix));
+        save_user_jpeg(&rendered.image, &wm_path, config, output_icc)?;
+        outputs.push(wm_path);
+    } else {
+        let final_path = config
+            .output_dir
+            .join(format!("{}_collage_final.jpg", config.prefix));
+        save_user_jpeg(&rendered.image, &final_path, config, output_icc)?;
+        outputs.push(final_path);
+    }
+
+    let save_elapsed_ms = save_started.elapsed().as_millis();
+    let elapsed_ms = rendered.elapsed_ms + save_elapsed_ms;
+    rendered.stage_timings.push(StageTiming {
+        stage: stage_key(Stage::SavingOutput).into(),
+        elapsed_ms: save_elapsed_ms,
+        details: Vec::new(),
+    });
+    progress::send(&ProgressMessage::StageFinished {
+        stage: Stage::SavingOutput,
+        elapsed_ms: save_elapsed_ms,
+        total_elapsed_ms: elapsed_ms,
+        details: Vec::new(),
+    });
+
+    Ok(PipelineReport {
+        outputs,
+        processed_count: rendered.processed_count,
+        failed_images: rendered.failed_images,
+        warnings: rendered.warnings,
+        elapsed_ms,
+        stage_timings: rendered.stage_timings,
+    })
+}
+
+pub fn render_preview(
+    config: &CollageConfig,
+    output_path: &Path,
+    preview_long_edge: u32,
+) -> Result<PreviewReport, AppError> {
+    if preview_long_edge == 0 {
+        return Err(AppError::Processing(
+            "preview long edge must be greater than 0".into(),
+        ));
+    }
+
+    let preview_started = Instant::now();
+    let mut rendered = render_final_image(config, false)?;
+    let final_width = rendered.image.width();
+    let final_height = rendered.image.height();
+    let save_started = Instant::now();
+
+    progress::send(&ProgressMessage::StageChanged {
+        stage: Stage::SavingOutput,
+        message: "Saving preview PNG...".into(),
+        elapsed_ms: rendered.elapsed_ms,
+    });
+
+    let preview = rendered
+        .image
+        .resize(preview_long_edge, preview_long_edge, FilterType::Lanczos3);
+    preview.save_with_format(output_path, image::ImageFormat::Png)?;
+
+    let save_elapsed_ms = save_started.elapsed().as_millis();
+    let elapsed_ms = preview_started.elapsed().as_millis();
+    rendered.stage_timings.push(StageTiming {
+        stage: stage_key(Stage::SavingOutput).into(),
+        elapsed_ms: save_elapsed_ms,
+        details: Vec::new(),
+    });
+    progress::send(&ProgressMessage::StageFinished {
+        stage: Stage::SavingOutput,
+        elapsed_ms: save_elapsed_ms,
+        total_elapsed_ms: elapsed_ms,
+        details: Vec::new(),
+    });
+
+    Ok(PreviewReport {
+        output_path: output_path.to_path_buf(),
+        width: preview.width(),
+        height: preview.height(),
+        final_width,
+        final_height,
+        processed_count: rendered.processed_count,
+        failed_images: rendered.failed_images,
+        warnings: rendered.warnings,
+        elapsed_ms,
+        stage_timings: rendered.stage_timings,
+    })
+}
+
+pub fn render_final_image(
+    config: &CollageConfig,
+    check_existing_output: bool,
+) -> Result<RenderedImageReport, AppError> {
+    let job_start = Instant::now();
+    let mut warnings = validate_config(config, check_existing_output)?;
+    let target_profile = color::load_target_profile(config)?;
     let mut timer = PipelineTimer::new(job_start);
     let total = config.image_paths.len();
     let planned_cols = (total as f64).sqrt().ceil() as u32;
@@ -277,7 +410,6 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
     let mut final_image = create_final_collage_image(&bordered_images, config, &final_layout)?;
     timer.finish_stage(Stage::CreatingCollage);
 
-    let mut outputs = Vec::new();
     if config.has_overlay() {
         progress::send(&ProgressMessage::StageChanged {
             stage: Stage::AddingWatermark,
@@ -300,28 +432,8 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         timer.finish_stage(Stage::AddingWatermark);
     }
 
-    progress::send(&ProgressMessage::StageChanged {
-        stage: Stage::SavingOutput,
-        message: "Saving JPEG output...".into(),
-        elapsed_ms: timer.total_elapsed_ms(),
-    });
-    if config.has_overlay() {
-        let wm_path = config
-            .output_dir
-            .join(format!("{}_collage_final_watermarked.jpg", config.prefix));
-        save_user_jpeg(&final_image, &wm_path, config, output_icc)?;
-        outputs.push(wm_path);
-    } else {
-        let final_path = config
-            .output_dir
-            .join(format!("{}_collage_final.jpg", config.prefix));
-        save_user_jpeg(&final_image, &final_path, config, output_icc)?;
-        outputs.push(final_path);
-    }
-    timer.finish_stage(Stage::SavingOutput);
-
-    Ok(PipelineReport {
-        outputs,
+    Ok(RenderedImageReport {
+        image: final_image,
         processed_count: bordered_images.len(),
         failed_images,
         warnings,
@@ -419,7 +531,10 @@ fn validate_percent_range(
     )))
 }
 
-fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
+fn validate_config(
+    config: &CollageConfig,
+    check_existing_output: bool,
+) -> Result<Vec<String>, AppError> {
     let mut warnings = Vec::new();
     if config.image_paths.is_empty() {
         return Err(AppError::Processing("select at least one image".into()));
@@ -638,7 +753,7 @@ fn validate_config(config: &CollageConfig) -> Result<Vec<String>, AppError> {
         }
     }
 
-    if !config.overwrite {
+    if check_existing_output && !config.overwrite {
         let existing: Vec<String> = expected_output_paths(config)
             .into_iter()
             .filter(|path| path.exists())
@@ -924,6 +1039,61 @@ mod tests {
     }
 
     #[test]
+    fn render_preview_creates_png_with_overlay_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        let watermark = dir.path().join("watermark.png");
+        save_test_image(&image, 20, 10);
+        save_test_image(&watermark, 4, 4);
+
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.prefix = "previewed".into();
+        config.watermark = Some(WatermarkConfig {
+            path: watermark,
+            scale_percent: 100.0,
+            position_x_percent: 80.0,
+            position_y_percent: 80.0,
+        });
+        config.text_block = Some(TextBlockConfig {
+            text: "Preview".into(),
+            font_family: "sans-serif".into(),
+            font_weight: 400,
+            font_style: TextFontStyle::Normal,
+            font_size_px: 24.0,
+            line_height_px: 28.0,
+            max_width_percent: 50.0,
+            align: TextAlign::Left,
+            text_rgba: [255, 255, 0, 255],
+            background_rgba: [0, 0, 0, 0],
+            padding_px: 0,
+            position_x_percent: 50.0,
+            position_y_percent: 50.0,
+        });
+        fs::write(
+            dir.path().join("previewed_collage_final_watermarked.jpg"),
+            b"existing export",
+        )
+        .unwrap();
+
+        let preview_path = dir.path().join("preview.png");
+        let report = render_preview(&config, &preview_path, 256).unwrap();
+        let preview = image::open(&preview_path).unwrap();
+
+        assert!(preview_path.exists());
+        assert!(report.width <= 256);
+        assert!(report.height <= 256);
+        assert_eq!(preview.width(), report.width);
+        assert_eq!(preview.height(), report.height);
+        assert_eq!(report.final_width, 2100);
+        assert_eq!(report.final_height, 2100);
+        assert_eq!(report.processed_count, 1);
+        assert!(report
+            .stage_timings
+            .iter()
+            .any(|timing| timing.stage == "saving_output"));
+    }
+
+    #[test]
     fn run_reports_partial_image_failures() {
         let dir = tempfile::tempdir().unwrap();
         let good = dir.path().join("good.jpg");
@@ -966,7 +1136,10 @@ mod tests {
 
         assert_eq!(missing_icc_warnings.len(), 1);
         assert!(missing_icc_warnings[0].starts_with("2 张图片"));
-        assert!(!report.warnings.iter().any(|warning| warning.contains(".jpg 未包含")));
+        assert!(!report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains(".jpg 未包含")));
     }
 
     #[test]
@@ -1031,7 +1204,7 @@ mod tests {
         config.final_size = 80;
         config.outer_border_px = Some(10);
 
-        assert!(validate_config(&config).is_ok());
+        assert!(validate_config(&config, true).is_ok());
     }
 
     #[test]
@@ -1071,7 +1244,7 @@ mod tests {
         let mut config = base_config(dir.path().to_path_buf(), vec![image]);
         config.layout_percent.content_long_edge_percent = Some(0.0);
 
-        let err = validate_config(&config).unwrap_err();
+        let err = validate_config(&config, true).unwrap_err();
 
         assert!(err
             .to_string()

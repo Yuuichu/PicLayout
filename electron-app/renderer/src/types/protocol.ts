@@ -101,6 +101,22 @@ export interface CollageResult {
   stage_timings: StageTiming[]
 }
 
+export interface PreviewImageResult {
+  data_url: string
+  width: number
+  height: number
+  final_width: number
+  final_height: number
+}
+
+export interface PreviewResult extends PreviewImageResult {
+  processed_count: number
+  failed_images: FailedImage[]
+  warnings: string[]
+  elapsed_ms: number
+  stage_timings: StageTiming[]
+}
+
 export type ProgressMessage =
   | { type: 'job_started'; total: number }
   | { type: 'image_processed'; index: number; total: number; elapsed_ms: number }
@@ -115,6 +131,19 @@ export type ProgressMessage =
   | {
       type: 'completed'
       outputs: string[]
+      processed_count: number
+      failed_images: FailedImage[]
+      warnings: string[]
+      elapsed_ms: number
+      stage_timings: StageTiming[]
+    }
+  | {
+      type: 'preview_completed'
+      output_path: string
+      width: number
+      height: number
+      final_width: number
+      final_height: number
       processed_count: number
       failed_images: FailedImage[]
       warnings: string[]

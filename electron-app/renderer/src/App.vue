@@ -10,15 +10,15 @@
       </div>
 
       <div class="toolbar-actions">
-        <button class="toolbar-button" :disabled="store.processing" @click="selectImages">
+        <button class="toolbar-button" :disabled="busy" @click="selectImages">
           <ImagePlus :size="16" />
           导入图片
         </button>
-        <button class="toolbar-button" :disabled="store.processing" @click="appendImages">
+        <button class="toolbar-button" :disabled="busy" @click="appendImages">
           <Plus :size="16" />
           追加
         </button>
-        <button class="toolbar-button output-button" :disabled="store.processing" @click="selectOutputDir">
+        <button class="toolbar-button output-button" :disabled="busy" @click="selectOutputDir">
           <FolderOpen :size="16" />
           {{ outputDirLabel }}
         </button>
@@ -66,14 +66,21 @@ import {
   Sun,
 } from 'lucide-vue-next'
 import { useAppStore } from './stores/appStore'
-import type { CollageConfig, CollageResult, ProgressMessage } from './types/protocol'
+import type { CollageResult, PreviewResult, ProgressMessage } from './types/protocol'
+import {
+  buildCollageConfig,
+  cloneCollageConfig,
+  createCollageConfigSignature,
+} from './utils/collageConfig'
 import FileSelector from './components/FileSelector.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 
 const store = useAppStore()
+const PREVIEW_LONG_EDGE = 1800
 
+const busy = computed(() => store.processing || store.renderedPreview.rendering)
 const canStart = computed(
-  () => store.selectedFiles.length > 0 && !!store.settings.outputDir && !store.processing
+  () => store.selectedFiles.length > 0 && !!store.settings.outputDir && !busy.value
 )
 
 const fileCountText = computed(() => {
@@ -83,6 +90,7 @@ const fileCountText = computed(() => {
 
 const statusLabel = computed(() => {
   if (store.processing) return store.statusMessage || '正在处理'
+  if (store.renderedPreview.rendering) return '生成精准预览'
   if (store.errorMessage) return '处理失败'
   if (store.cancelledMessage) return '已取消'
   if (store.outputFiles.length) return '已完成'
@@ -109,6 +117,7 @@ const STAGE_PROGRESS: Record<string, number> = {
 let removeProgressListener: (() => void) | null = null
 let uiTaskStartedAt = 0
 let wallTimer: ReturnType<typeof setInterval> | null = null
+let lastStartedConfigSignature = ''
 
 onMounted(() => {
   removeProgressListener = window.electronAPI.onProgress(handleProgress)
@@ -212,6 +221,7 @@ function handleProgress(msg: ProgressMessage) {
     store.elapsedMs = msg.elapsed_ms
     store.stageTimings = msg.stage_timings
     store.setProgress(100, '处理完成')
+    void loadOutputPreview(msg.outputs, lastStartedConfigSignature)
   } else if (msg.type === 'cancelled') {
     finishWallTimer()
     store.processing = false
@@ -238,51 +248,19 @@ function applyCompletedResult(result: CollageResult) {
   }
   store.stageTimings = result.stage_timings
   store.setProgress(100, '处理完成')
+  void loadOutputPreview(result.outputs, lastStartedConfigSignature)
 }
 
 async function startCollage() {
   if (!canStart.value) return
 
   const clickedAt = performance.now()
-  const s = store.settings
-  const config: CollageConfig = {
-    image_paths: store.selectedFiles,
-    image_rotations: store.selectedImageRotations(),
-    processing_mode: s.processingMode,
-    output_dir: s.outputDir,
-    prefix: s.prefix || 'output',
-    content_long_edge_percent: s.contentLongEdgePercent,
-    tile_border_percent: s.tileBorderPercent,
-    gap_x_percent: s.gapXPercent,
-    gap_y_percent: s.gapYPercent,
-    outer_border_percent: s.outerBorderMode === 'custom' ? s.outerBorderPercent : null,
-    final_size: s.finalSize,
-    dpi: s.dpi,
-    background_color: s.backgroundColor,
-    overwrite: false,
-    output_settings: {
-      jpeg_quality: s.jpegQuality,
-      auto_orient: s.autoOrient,
-      linear_light_resize: s.linearLightResize,
-    },
-    color_management: {
-      enabled: s.colorManagementEnabled,
-      target_profile: s.targetProfileMode,
-      target_profile_path:
-        s.targetProfileMode === 'custom' && s.targetProfilePath
-          ? s.targetProfilePath
-          : null,
-      rendering_intent: s.renderingIntent,
-    },
-    watermark:
-      s.watermarkEnabled && s.watermark.path
-        ? { ...s.watermark }
-        : null,
-    text_block:
-      s.textBlockEnabled && s.textBlock.text.trim()
-        ? { ...s.textBlock }
-        : null,
-  }
+  const config = buildCollageConfig(
+    store.settings,
+    store.selectedFiles,
+    store.selectedImageRotations()
+  )
+  lastStartedConfigSignature = createCollageConfigSignature(config)
 
   store.processing = true
   store.resetProgress()
@@ -290,7 +268,7 @@ async function startCollage() {
   startWallTimer(clickedAt)
 
   try {
-    const plainConfig = JSON.parse(JSON.stringify(config))
+    const plainConfig = cloneCollageConfig(config)
     const result = await window.electronAPI.startCollage(plainConfig)
     if (store.processing && !store.cancelledMessage && !store.errorMessage) {
       applyCompletedResult(result)
@@ -301,6 +279,27 @@ async function startCollage() {
       store.errorMessage = formatCollageError(err)
       store.processing = false
     }
+  }
+}
+
+async function loadOutputPreview(outputs: string[], signature: string) {
+  const output = outputs[0]
+  if (!output || !signature) return
+
+  try {
+    const imagePreview = await window.electronAPI.getImagePreviewDataUrl(output, PREVIEW_LONG_EDGE)
+    if (!imagePreview) return
+    const result: PreviewResult = {
+      ...imagePreview,
+      processed_count: store.processedCount,
+      failed_images: store.failedImages,
+      warnings: store.warnings,
+      elapsed_ms: store.elapsedMs,
+      stage_timings: store.stageTimings,
+    }
+    store.setRenderedPreview(result, signature, 'output')
+  } catch (err) {
+    console.error('failed to load output preview:', err)
   }
 }
 

@@ -73,8 +73,25 @@
 
   <div v-else-if="props.variant === 'viewer'" class="viewer-workspace">
     <div class="viewer-chrome">
-      <span>Viewer</span>
-      <span>{{ canvasMeta }}</span>
+      <div class="viewer-title">
+        <span>Viewer</span>
+        <span>{{ canvasMeta }}</span>
+      </div>
+      <div v-if="store.selectedFiles.length > 0" class="viewer-actions">
+        <span v-if="precisePreviewStatus" class="viewer-status">
+          {{ precisePreviewStatus }}
+        </span>
+        <button
+          class="quiet-button precise-preview-button"
+          :disabled="!canRenderPrecisePreview"
+          :title="precisePreviewTitle"
+          @click="renderPrecisePreview"
+        >
+          <Loader2 v-if="store.renderedPreview.rendering" class="spin-icon" :size="13" />
+          <RefreshCw v-else :size="13" />
+          {{ precisePreviewButtonLabel }}
+        </button>
+      </div>
     </div>
 
     <div class="viewer-stage">
@@ -84,50 +101,59 @@
         class="preview-frame viewer-preview-frame"
         :style="previewFrameStyle"
       >
-        <div class="collage-preview" :style="thumbGridStyle">
-          <div
-            v-for="(f, i) in store.selectedFiles"
-            :key="f"
-            class="thumb-tile"
-            :class="{ dragging: draggedIndex === i, dropTarget: draggedIndex !== null && draggedIndex !== i }"
-            :style="thumbTileStyle(i)"
-            :title="f"
-            draggable="true"
-            @dragstart="onDragStart(i)"
-            @dragover.prevent
-            @drop="onDrop(i)"
-            @dragend="onDragEnd"
-          >
-            <div class="thumb-frame">
-              <img
-                v-if="store.thumbnails[f]"
-                class="thumb-img"
-                :src="store.thumbnails[f]!"
-                :alt="basename(f)"
-                :style="[thumbImagePlacementStyle(f, i), thumbnailImageStyle(f)]"
-              />
-              <span v-else class="thumb-fallback">加载中</span>
-            </div>
-            <span class="thumb-index">{{ i + 1 }}</span>
-            <span class="thumb-name">{{ basename(f) }}</span>
-          </div>
-        </div>
-
         <img
-          v-if="watermarkPreviewSrc"
-          class="watermark-preview"
-          :src="watermarkPreviewSrc"
-          :style="watermarkPreviewStyle"
-          alt="watermark preview"
+          v-if="activeRenderedPreview"
+          class="rendered-preview-img"
+          :src="activeRenderedPreview.data_url"
+          alt="rendered preview"
         />
 
-        <div
-          v-if="textBlockPreviewText"
-          class="text-block-preview"
-          :style="textBlockPreviewStyle"
-        >
-          {{ textBlockPreviewText }}
-        </div>
+        <template v-else>
+          <div class="collage-preview" :style="thumbGridStyle">
+            <div
+              v-for="(f, i) in store.selectedFiles"
+              :key="f"
+              class="thumb-tile"
+              :class="{ dragging: draggedIndex === i, dropTarget: draggedIndex !== null && draggedIndex !== i }"
+              :style="thumbTileStyle(i)"
+              :title="f"
+              draggable="true"
+              @dragstart="onDragStart(i)"
+              @dragover.prevent
+              @drop="onDrop(i)"
+              @dragend="onDragEnd"
+            >
+              <div class="thumb-frame">
+                <img
+                  v-if="store.thumbnails[f]"
+                  class="thumb-img"
+                  :src="store.thumbnails[f]!"
+                  :alt="basename(f)"
+                  :style="[thumbImagePlacementStyle(f, i), thumbnailImageStyle(f)]"
+                />
+                <span v-else class="thumb-fallback">加载中</span>
+              </div>
+              <span class="thumb-index">{{ i + 1 }}</span>
+              <span class="thumb-name">{{ basename(f) }}</span>
+            </div>
+          </div>
+
+          <img
+            v-if="watermarkPreviewSrc"
+            class="watermark-preview"
+            :src="watermarkPreviewSrc"
+            :style="watermarkPreviewStyle"
+            alt="watermark preview"
+          />
+
+          <div
+            v-if="textBlockPreviewText"
+            class="text-block-preview"
+            :style="textBlockPreviewStyle"
+          >
+            {{ textBlockPreviewText }}
+          </div>
+        </template>
       </div>
 
       <div v-else class="empty-viewer">
@@ -241,13 +267,20 @@ import {
   GripVertical,
   ImagePlus,
   Images,
+  Loader2,
   Plus,
+  RefreshCw,
   RotateCw,
   Trash2,
   X,
 } from 'lucide-vue-next'
 import { useAppStore } from '../stores/appStore'
 import { BACKGROUND_COLOR_OPTIONS } from '../types/protocol'
+import {
+  buildCollageConfig,
+  cloneCollageConfig,
+  createCollageConfigSignature,
+} from '../utils/collageConfig'
 import {
   computePreviewLayout,
   computeTileFrame,
@@ -268,7 +301,7 @@ const previewFrameRef = ref<HTMLElement | null>(null)
 const previewFrameWidth = ref(0)
 let previewResizeObserver: ResizeObserver | null = null
 
-const processing = computed(() => store.processing)
+const processing = computed(() => store.processing || store.renderedPreview.rendering)
 const gridCols = computed(() => Math.max(1, Math.ceil(Math.sqrt(store.selectedFiles.length))))
 const gridRows = computed(() =>
   Math.max(1, Math.ceil(store.selectedFiles.length / gridCols.value))
@@ -277,6 +310,21 @@ const gridRows = computed(() =>
 const PREVIEW_MIN_HEIGHT = 260
 const PREVIEW_MAX_HEIGHT = 660
 const TILE_MAX_SIZE = 190
+const PRECISE_PREVIEW_LONG_EDGE = 1800
+
+const currentCollageConfig = computed(() =>
+  buildCollageConfig(store.settings, store.selectedFiles, store.selectedImageRotations())
+)
+
+const currentConfigSignature = computed(() =>
+  createCollageConfigSignature(currentCollageConfig.value)
+)
+
+const activeRenderedPreview = computed(() => {
+  const preview = store.renderedPreview
+  if (!preview.data_url || preview.signature !== currentConfigSignature.value) return null
+  return preview
+})
 
 const backgroundColorHex = computed(() => {
   return BACKGROUND_COLOR_OPTIONS.find((opt) => opt.value === s.backgroundColor)?.hex ?? '#ffffff'
@@ -317,7 +365,14 @@ const resultSummary = computed(() => {
 
 const canvasMeta = computed(() => {
   if (!store.selectedFiles.length) return '等待图片'
-  return `${gridCols.value}×${gridRows.value} · ${s.finalSize}px · ${currentColorLabel.value}`
+  const rendered = activeRenderedPreview.value
+  const mode =
+    rendered?.source === 'output'
+      ? '导出结果'
+      : rendered?.source === 'precise'
+        ? '精准预览'
+        : '快速预览'
+  return `${mode} · ${gridCols.value}×${gridRows.value} · ${s.finalSize}px · ${currentColorLabel.value}`
 })
 
 const previewGeometry = computed(() => {
@@ -335,14 +390,17 @@ const previewGeometry = computed(() => {
 
 const previewFrameStyle = computed(() => {
   const geom = previewGeometry.value
-  const ratio = geom.canvasWidth / geom.canvasHeight
+  const rendered = activeRenderedPreview.value
+  const canvasWidth = rendered?.final_width ?? geom.canvasWidth
+  const canvasHeight = rendered?.final_height ?? geom.canvasHeight
+  const ratio = canvasWidth / canvasHeight
   const reserved = store.ui.filmstripCollapsed ? 142 : 272
   const maxWidthByViewer = `min(100%, calc((100vh - ${reserved}px) * ${ratio.toFixed(4)}))`
   const maxWidthByTask = `min(${geom.cols * TILE_MAX_SIZE}px, ${Math.round(PREVIEW_MAX_HEIGHT * ratio)}px)`
   const maxWidth = props.variant === 'viewer' ? maxWidthByViewer : maxWidthByTask
 
   return {
-    aspectRatio: `${geom.canvasWidth} / ${geom.canvasHeight}`,
+    aspectRatio: `${canvasWidth} / ${canvasHeight}`,
     maxWidth,
     minHeight: `${PREVIEW_MIN_HEIGHT}px`,
     backgroundColor: backgroundColorHex.value,
@@ -423,7 +481,7 @@ const textBlockPreviewStyle = computed(() => {
   const text = s.textBlock
   const scale = previewDisplayScale.value
   const fontSize = Math.max(1, text.font_size_px * scale)
-  const lineHeight = Math.max(fontSize, text.line_height_px * scale)
+  const lineHeight = Math.max(1, text.line_height_px * scale)
   const padding = Math.max(0, text.padding_px * scale)
 
   return {
@@ -441,6 +499,55 @@ const textBlockPreviewStyle = computed(() => {
     textAlign: text.align,
   }
 })
+
+const canRenderPrecisePreview = computed(() => {
+  return (
+    props.variant === 'viewer' &&
+    store.selectedFiles.length > 0 &&
+    !!s.outputDir &&
+    !store.processing &&
+    !store.renderedPreview.rendering
+  )
+})
+
+const precisePreviewButtonLabel = computed(() => {
+  if (store.renderedPreview.rendering) return '生成中'
+  return activeRenderedPreview.value ? '更新精准预览' : '生成精准预览'
+})
+
+const precisePreviewTitle = computed(() => {
+  if (!store.selectedFiles.length) return '先导入图片'
+  if (!s.outputDir) return '先选择输出目录'
+  if (store.processing) return '导出处理中'
+  if (store.renderedPreview.rendering) return '正在生成精准预览'
+  if (store.renderedPreview.errorMessage) return store.renderedPreview.errorMessage
+  return '由 Rust 使用正式导出链路生成低分辨率预览'
+})
+
+const precisePreviewStatus = computed(() => {
+  if (store.renderedPreview.rendering) return '生成中'
+  if (store.renderedPreview.errorMessage) return '精准预览失败'
+  if (activeRenderedPreview.value?.source === 'output') return '导出结果'
+  if (activeRenderedPreview.value?.source === 'precise') return '精准预览'
+  if (store.renderedPreview.data_url) return '参数已变化'
+  return ''
+})
+
+async function renderPrecisePreview() {
+  if (!canRenderPrecisePreview.value) return
+
+  const signature = currentConfigSignature.value
+  store.setRenderedPreviewRendering(true)
+  try {
+    const result = await window.electronAPI.renderPreview(
+      cloneCollageConfig(currentCollageConfig.value),
+      PRECISE_PREVIEW_LONG_EDGE
+    )
+    store.setRenderedPreview(result, signature, 'precise')
+  } catch (err: unknown) {
+    store.setRenderedPreviewError(formatPreviewError(err))
+  }
+}
 
 function basename(path: string): string {
   return path.replace(/\\/g, '/').split('/').pop() ?? path
@@ -582,6 +689,13 @@ function clamp(value: number, min: number, max: number): number {
 function rgbaCss(color: [number, number, number, number]): string {
   const [r, g, b, a] = color
   return `rgba(${clamp(r, 0, 255)}, ${clamp(g, 0, 255)}, ${clamp(b, 0, 255)}, ${clamp(a, 0, 255) / 255})`
+}
+
+function formatPreviewError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  return raw
+    .replace(/^Error invoking remote method 'preview:render': Error: /, '')
+    .replace(/^Error invoking remote method 'preview:render': /, '')
 }
 
 function updatePreviewFrameWidth() {
@@ -729,6 +843,39 @@ onBeforeUnmount(() => {
   letter-spacing: 0.02em;
 }
 
+.viewer-title,
+.viewer-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.viewer-title span,
+.viewer-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.viewer-status {
+  max-width: 92px;
+  color: var(--color-text-subtle);
+  font-size: 11px;
+}
+
+.precise-preview-button {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .viewer-stage {
   flex: 1;
   min-height: 0;
@@ -778,8 +925,34 @@ onBeforeUnmount(() => {
   min-height: 0 !important;
 }
 
+.viewer-preview-frame .thumb-tile {
+  border: 0;
+  border-radius: 0;
+  cursor: default;
+  transition: none;
+}
+
+.viewer-preview-frame .thumb-tile.dropTarget:hover {
+  border-color: transparent;
+  transform: none;
+}
+
+.viewer-preview-frame .thumb-index,
+.viewer-preview-frame .thumb-name {
+  display: none;
+}
+
 .collage-preview {
   position: absolute;
+}
+
+.rendered-preview-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: fill;
 }
 
 .thumb-tile {
@@ -871,8 +1044,6 @@ onBeforeUnmount(() => {
 
 .watermark-preview {
   object-fit: contain;
-  opacity: 0.78;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.35));
 }
 
 .text-block-preview {
@@ -1061,5 +1232,14 @@ onBeforeUnmount(() => {
 
 .danger-muted {
   color: var(--color-danger);
+}
+
+.spin-icon {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>
