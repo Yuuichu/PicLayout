@@ -28,6 +28,8 @@ pub struct CollageConfig {
     pub layout_percent: LayoutPercentConfig,
     #[serde(default = "default_final_size")]
     pub final_size: u32,
+    #[serde(default)]
+    pub target_aspect_ratio: Option<AspectRatioConfig>,
     #[serde(default = "default_dpi")]
     pub dpi: u32,
     #[serde(default)]
@@ -80,6 +82,11 @@ impl CollageConfig {
             .outer_border_percent
             .and_then(|percent| percent_to_px(self.final_size, percent))
             .or(self.outer_border_px)
+    }
+
+    pub fn target_canvas_dimensions(&self) -> Option<(u32, u32)> {
+        self.target_aspect_ratio
+            .and_then(|ratio| ratio.canvas_dimensions(self.final_size))
     }
 
     fn resolved_content_long_edge_px(&self) -> Option<u32> {
@@ -152,6 +159,40 @@ pub struct ResolvedLayout {
     pub gap_y_px: u32,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+pub struct AspectRatioConfig {
+    pub width: f32,
+    pub height: f32,
+}
+
+impl AspectRatioConfig {
+    pub fn normalized_ratio(self) -> Option<f64> {
+        if !self.width.is_finite() || !self.height.is_finite() {
+            return None;
+        }
+        if self.width <= 0.0 || self.height <= 0.0 {
+            return None;
+        }
+
+        Some(self.width as f64 / self.height as f64)
+    }
+
+    pub fn canvas_dimensions(self, final_size: u32) -> Option<(u32, u32)> {
+        let ratio = self.normalized_ratio()?;
+        if final_size == 0 {
+            return None;
+        }
+
+        if ratio >= 1.0 {
+            let height = (final_size as f64 / ratio).round();
+            return Some((final_size, height.max(1.0).min(u32::MAX as f64) as u32));
+        }
+
+        let width = (final_size as f64 * ratio).round();
+        Some((width.max(1.0).min(u32::MAX as f64) as u32, final_size))
+    }
+}
+
 pub fn percent_to_px(base_px: u32, percent: f32) -> Option<u32> {
     if !percent.is_finite() || percent < 0.0 {
         return None;
@@ -221,6 +262,8 @@ pub struct WatermarkConfig {
     pub path: PathBuf,
     #[serde(default = "default_watermark_scale")]
     pub scale_percent: f32,
+    #[serde(default)]
+    pub position_reference: PositionReference,
     #[serde(default = "default_watermark_x")]
     pub position_x_percent: f32,
     #[serde(default = "default_watermark_y")]
@@ -250,10 +293,20 @@ pub struct TextBlockConfig {
     pub background_rgba: [u8; 4],
     #[serde(default)]
     pub padding_px: u32,
+    #[serde(default)]
+    pub position_reference: PositionReference,
     #[serde(default = "default_text_x")]
     pub position_x_percent: f32,
     #[serde(default = "default_text_y")]
     pub position_y_percent: f32,
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PositionReference {
+    #[default]
+    Canvas,
+    Content,
 }
 
 #[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
@@ -461,7 +514,10 @@ mod tests {
         }));
 
         assert_eq!(high_quality.processing_mode, ProcessingMode::MaximumQuality);
-        assert_eq!(standard.processing_mode, ProcessingMode::StandardHighQuality);
+        assert_eq!(
+            standard.processing_mode,
+            ProcessingMode::StandardHighQuality
+        );
         assert_eq!(fast.processing_mode, ProcessingMode::FastPreview);
     }
 
@@ -528,5 +584,94 @@ mod tests {
         }));
 
         assert_eq!(config.explicit_outer_border_px(), Some(2000));
+    }
+
+    #[test]
+    fn target_aspect_ratio_deserializes_and_uses_final_size_as_long_edge() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "final_size": 1000,
+            "target_aspect_ratio": {
+                "width": 3,
+                "height": 4
+            }
+        }));
+
+        assert_eq!(
+            config.target_aspect_ratio,
+            Some(AspectRatioConfig {
+                width: 3.0,
+                height: 4.0
+            })
+        );
+        assert_eq!(config.target_canvas_dimensions(), Some((750, 1000)));
+    }
+
+    #[test]
+    fn overlay_position_reference_defaults_to_canvas_for_legacy_protocol() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "watermark": {
+                "path": "watermark.png"
+            },
+            "text_block": {
+                "text": "caption"
+            }
+        }));
+
+        assert_eq!(
+            config.watermark.unwrap().position_reference,
+            PositionReference::Canvas
+        );
+        assert_eq!(
+            config.text_block.unwrap().position_reference,
+            PositionReference::Canvas
+        );
+    }
+
+    #[test]
+    fn overlay_position_reference_accepts_content_mode() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "watermark": {
+                "path": "watermark.png",
+                "position_reference": "content"
+            },
+            "text_block": {
+                "text": "caption",
+                "position_reference": "content"
+            }
+        }));
+
+        assert_eq!(
+            config.watermark.unwrap().position_reference,
+            PositionReference::Content
+        );
+        assert_eq!(
+            config.text_block.unwrap().position_reference,
+            PositionReference::Content
+        );
+    }
+
+    #[test]
+    fn landscape_target_aspect_ratio_uses_width_as_long_edge() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "final_size": 1000,
+            "target_aspect_ratio": {
+                "width": 4,
+                "height": 3
+            }
+        }));
+
+        assert_eq!(config.target_canvas_dimensions(), Some((1000, 750)));
     }
 }

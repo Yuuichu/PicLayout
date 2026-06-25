@@ -10,6 +10,7 @@ export interface CollageConfig {
   gap_y_percent: number
   outer_border_percent?: number | null
   final_size: number
+  target_aspect_ratio?: TargetAspectRatio | null
   dpi: number
   background_color: BackgroundColor
   watermark: WatermarkConfig | null
@@ -22,12 +23,20 @@ export interface CollageConfig {
 export type ImageRotationDegrees = 0 | 90 | 180 | 270
 export type ProcessingMode = 'standard_high_quality' | 'maximum_quality' | 'fast_preview'
 
+export interface TargetAspectRatio {
+  width: number
+  height: number
+}
+
+export type PositionReference = 'canvas' | 'content'
+
 export type BackgroundColor =
   | 'white' | 'black' | 'grey' | 'lightgrey' | 'beige' | 'lightblue' | 'lightyellow'
 
 export interface WatermarkConfig {
   path: string
   scale_percent: number
+  position_reference: PositionReference
   position_x_percent: number
   position_y_percent: number
 }
@@ -47,6 +56,7 @@ export interface TextBlockConfig {
   text_rgba: [number, number, number, number]
   background_rgba: [number, number, number, number]
   padding_px: number
+  position_reference: PositionReference
   position_x_percent: number
   position_y_percent: number
 }

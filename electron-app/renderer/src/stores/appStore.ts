@@ -7,11 +7,16 @@ import type {
   PreviewResult,
   ProcessingMode,
   RenderingIntent,
+  PositionReference,
   StageTiming,
   TargetProfileMode,
   TextBlockConfig,
   WatermarkConfig,
 } from '../types/protocol'
+import {
+  isCanvasAspectPreset,
+  type CanvasAspectPreset,
+} from '../utils/aspectRatioPresets'
 
 // 用户设置（持久化到 localStorage）
 const SETTINGS_KEY = 'piclayout_settings'
@@ -32,6 +37,9 @@ export interface Settings {
   outerBorderMode: 'auto' | 'custom'
   outerBorderPercent: number
   finalSize: number
+  canvasAspectPreset: CanvasAspectPreset
+  customAspectWidth: number
+  customAspectHeight: number
   dpi: number
   backgroundColor: BackgroundColor
   prefix: string
@@ -105,8 +113,10 @@ function loadSettings(): Settings {
         watermark: { ...defaults.watermark, ...parsed.watermark },
         textBlock: { ...defaults.textBlock, ...parsed.textBlock },
       }
+      normalizeOverlayPositionSettings(settings, parsed)
       normalizeQualitySettings(settings, parsed)
       normalizeLayoutSettings(settings, parsed)
+      normalizeAspectSettings(settings, parsed)
       return settings
     }
   } catch {}
@@ -171,6 +181,9 @@ function defaultSettings(): Settings {
     outerBorderMode: 'auto',
     outerBorderPercent: 10,
     finalSize: 10000,
+    canvasAspectPreset: 'auto',
+    customAspectWidth: 3,
+    customAspectHeight: 4,
     dpi: 300,
     backgroundColor: 'white',
     prefix: 'output',
@@ -187,6 +200,7 @@ function defaultSettings(): Settings {
     watermark: {
       path: '',
       scale_percent: 100,
+      position_reference: 'content',
       position_x_percent: 50,
       position_y_percent: 95,
     },
@@ -203,10 +217,59 @@ function defaultSettings(): Settings {
       text_rgba: [255, 255, 255, 255],
       background_rgba: [0, 0, 0, 0],
       padding_px: 0,
+      position_reference: 'content',
       position_x_percent: 50,
       position_y_percent: 92,
     },
   }
+}
+
+function normalizeOverlayPositionSettings(settings: Settings, parsed: Partial<Settings>) {
+  settings.watermark.position_reference = normalizeStoredPositionReference(
+    parsed.watermark?.position_reference
+  )
+  settings.textBlock.position_reference = normalizeStoredPositionReference(
+    parsed.textBlock?.position_reference
+  )
+  sanitizeOverlayPositions(settings)
+}
+
+function normalizeStoredPositionReference(value: unknown): PositionReference {
+  return value === 'content' ? 'content' : 'canvas'
+}
+
+function sanitizeOverlayPositions(settings: Settings) {
+  settings.watermark.position_reference = normalizePositionReference(
+    settings.watermark.position_reference
+  )
+  settings.textBlock.position_reference = normalizePositionReference(
+    settings.textBlock.position_reference
+  )
+  settings.watermark.position_x_percent = normalizePositionPercent(
+    settings.watermark.position_x_percent,
+    50
+  )
+  settings.watermark.position_y_percent = normalizePositionPercent(
+    settings.watermark.position_y_percent,
+    95
+  )
+  settings.textBlock.position_x_percent = normalizePositionPercent(
+    settings.textBlock.position_x_percent,
+    50
+  )
+  settings.textBlock.position_y_percent = normalizePositionPercent(
+    settings.textBlock.position_y_percent,
+    92
+  )
+}
+
+function normalizePositionReference(value: unknown): PositionReference {
+  return value === 'canvas' ? 'canvas' : 'content'
+}
+
+function normalizePositionPercent(value: unknown, fallback: number): number {
+  const normalized = normalizeNumber(value, fallback)
+  return Math.round(normalized * 100) / 100
 }
 
 function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings> & LegacyLayoutSettings) {
@@ -258,6 +321,14 @@ function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings> &
   dropLegacyLayoutSettings(settings as Settings & LegacyLayoutSettings)
 }
 
+function normalizeAspectSettings(settings: Settings, parsed: Partial<Settings>) {
+  settings.canvasAspectPreset = isCanvasAspectPreset(parsed.canvasAspectPreset)
+    ? parsed.canvasAspectPreset
+    : 'auto'
+  settings.customAspectWidth = clampNumber(settings.customAspectWidth, 0.1, 100, 3)
+  settings.customAspectHeight = clampNumber(settings.customAspectHeight, 0.1, 100, 4)
+}
+
 function sanitizeLayoutSettings(settings: Settings) {
   settings.contentLongEdgePercent = clampPercent(settings.contentLongEdgePercent, 0.01, 100, 40)
   settings.tileBorderPercent = clampPercent(settings.tileBorderPercent, 0, 50, 1)
@@ -266,6 +337,7 @@ function sanitizeLayoutSettings(settings: Settings) {
   settings.gapYPercent = 0
   settings.outerBorderPercent = clampPercent(settings.outerBorderPercent, 0, 49.99, 10)
   settings.finalSize = Math.min(30000, Math.max(1000, Math.round(normalizeNumber(settings.finalSize, 10000))))
+  normalizeAspectSettings(settings, settings)
 }
 
 function percentFromPx(px: number, finalSize: number): number {
@@ -279,6 +351,11 @@ function roundPercent(value: number): number {
 function clampPercent(value: number, min: number, max: number, fallback: number): number {
   const normalized = normalizeNumber(value, fallback)
   return roundPercent(Math.min(max, Math.max(min, normalized)))
+}
+
+function clampNumber(value: number, min: number, max: number, fallback: number): number {
+  const normalized = normalizeNumber(value, fallback)
+  return Math.round(Math.min(max, Math.max(min, normalized)) * 100) / 100
 }
 
 function normalizeNumber(value: unknown, fallback: number): number {
@@ -302,6 +379,7 @@ export const useAppStore = defineStore('app', () => {
 
   function saveSettings() {
     sanitizeLayoutSettings(settings)
+    sanitizeOverlayPositions(settings)
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   }
 

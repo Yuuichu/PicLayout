@@ -141,18 +141,42 @@
           <img
             v-if="watermarkPreviewSrc"
             class="watermark-preview"
+            :class="{ 'overlay-dragging': draggedOverlay === 'watermark' }"
             :src="watermarkPreviewSrc"
             :style="watermarkPreviewStyle"
             alt="watermark preview"
+            draggable="false"
+            @pointerdown="startOverlayDrag('watermark', $event)"
           />
 
           <div
             v-if="textBlockPreviewText"
             class="text-block-preview"
+            :class="{ 'overlay-dragging': draggedOverlay === 'textBlock' }"
             :style="textBlockPreviewStyle"
+            @pointerdown="startOverlayDrag('textBlock', $event)"
           >
             {{ textBlockPreviewText }}
           </div>
+        </template>
+
+        <template v-if="activeRenderedPreview">
+          <div
+            v-if="watermarkPreviewSrc"
+            class="overlay-drag-hitbox watermark-drag-hitbox"
+            :class="{ 'overlay-dragging': draggedOverlay === 'watermark' }"
+            :style="watermarkPreviewStyle"
+            title="拖动水印"
+            @pointerdown="startOverlayDrag('watermark', $event)"
+          />
+          <div
+            v-if="textBlockPreviewText"
+            class="overlay-drag-hitbox text-block-drag-hitbox"
+            :class="{ 'overlay-dragging': draggedOverlay === 'textBlock' }"
+            :style="textBlockDragHitboxStyle"
+            title="拖动文本框"
+            @pointerdown="startOverlayDrag('textBlock', $event)"
+          />
         </template>
       </div>
 
@@ -256,7 +280,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ArrowLeft,
   ArrowRight,
@@ -287,6 +311,16 @@ import {
   computeTilePlacement,
   type ImageSizeLike,
 } from '../utils/previewLayout'
+import {
+  findCanvasAspectOption,
+  resolveCanvasAspectRatio,
+} from '../utils/aspectRatioPresets'
+import {
+  canvasPointToOverlayPosition,
+  overlaySizeScale,
+  overlayPositionToCanvasPoint,
+  roundOverlayPercent,
+} from '../utils/overlayPosition'
 
 const props = withDefaults(defineProps<{
   variant?: 'task' | 'viewer' | 'filmstrip'
@@ -297,6 +331,8 @@ const props = withDefaults(defineProps<{
 const store = useAppStore()
 const s = store.settings
 const draggedIndex = ref<number | null>(null)
+type OverlayDragTarget = 'watermark' | 'textBlock'
+const draggedOverlay = ref<OverlayDragTarget | null>(null)
 const previewFrameRef = ref<HTMLElement | null>(null)
 const previewFrameWidth = ref(0)
 let previewResizeObserver: ResizeObserver | null = null
@@ -333,6 +369,10 @@ const backgroundColorHex = computed(() => {
 const currentColorLabel = computed(
   () => BACKGROUND_COLOR_OPTIONS.find((opt) => opt.value === s.backgroundColor)?.label ?? ''
 )
+
+const canvasAspectRatio = computed(() => resolveCanvasAspectRatio(s))
+
+const canvasAspectLabel = computed(() => findCanvasAspectOption(s.canvasAspectPreset).shortLabel)
 
 const selectedCountLabel = computed(() => {
   const n = store.selectedFiles.length
@@ -372,13 +412,14 @@ const canvasMeta = computed(() => {
       : rendered?.source === 'precise'
         ? '精准预览'
         : '快速预览'
-  return `${mode} · ${gridCols.value}×${gridRows.value} · ${s.finalSize}px · ${currentColorLabel.value}`
+  return `${mode} | ${gridCols.value}x${gridRows.value} | ${canvasAspectLabel.value} | ${s.finalSize}px | ${currentColorLabel.value}`
 })
 
 const previewGeometry = computed(() => {
   return computePreviewLayout({
     imageCount: store.selectedFiles.length,
     finalSize: s.finalSize,
+    targetAspectRatio: canvasAspectRatio.value,
     contentLongEdgePercent: s.contentLongEdgePercent,
     tileBorderPercent: s.tileBorderPercent,
     gapXPercent: s.gapXPercent,
@@ -461,12 +502,19 @@ const watermarkPreviewStyle = computed(() => {
   const watermarkWidth = Math.max(1, size?.width ?? 240)
   const watermarkHeight = Math.max(1, size?.height ?? 240)
   const scale = Math.max(0.01, s.watermark.scale_percent / 100)
-  const x = clamp(s.watermark.position_x_percent, 0, 100)
-  const y = clamp(s.watermark.position_y_percent, 0, 100)
+    * overlaySizeScale(geom, s.watermark.position_reference, s.finalSize)
+  const point = overlayPositionToCanvasPoint(
+    geom,
+    s.watermark.position_reference,
+    {
+      x: s.watermark.position_x_percent,
+      y: s.watermark.position_y_percent,
+    }
+  )
 
   return {
-    left: `${x}%`,
-    top: `${y}%`,
+    left: `${(point.x / geom.canvasWidth) * 100}%`,
+    top: `${(point.y / geom.canvasHeight) * 100}%`,
     width: `${(watermarkWidth * scale / geom.canvasWidth) * 100}%`,
     height: `${(watermarkHeight * scale / geom.canvasHeight) * 100}%`,
   }
@@ -479,15 +527,27 @@ const textBlockPreviewText = computed(() => {
 
 const textBlockPreviewStyle = computed(() => {
   const text = s.textBlock
+  const geom = previewGeometry.value
   const scale = previewDisplayScale.value
-  const fontSize = Math.max(1, text.font_size_px * scale)
-  const lineHeight = Math.max(1, text.line_height_px * scale)
-  const padding = Math.max(0, text.padding_px * scale)
+  const referenceScale = overlaySizeScale(geom, text.position_reference, s.finalSize)
+  const fontSize = Math.max(1, text.font_size_px * referenceScale * scale)
+  const lineHeight = Math.max(1, text.line_height_px * referenceScale * scale)
+  const padding = Math.max(0, text.padding_px * referenceScale * scale)
+
+  const point = overlayPositionToCanvasPoint(
+    geom,
+    text.position_reference,
+    {
+      x: text.position_x_percent,
+      y: text.position_y_percent,
+    }
+  )
+  const widthPercent = textBlockWidthPercentOfCanvas(geom)
 
   return {
-    left: `${clamp(text.position_x_percent, 0, 100)}%`,
-    top: `${clamp(text.position_y_percent, 0, 100)}%`,
-    width: `${clamp(text.max_width_percent, 1, 100)}%`,
+    left: `${(point.x / geom.canvasWidth) * 100}%`,
+    top: `${(point.y / geom.canvasHeight) * 100}%`,
+    width: `${widthPercent}%`,
     color: rgbaCss(text.text_rgba),
     backgroundColor: rgbaCss(text.background_rgba),
     padding: `${padding}px`,
@@ -499,6 +559,42 @@ const textBlockPreviewStyle = computed(() => {
     textAlign: text.align,
   }
 })
+
+const textBlockDragHitboxStyle = computed(() => {
+  const text = s.textBlock
+  const geom = previewGeometry.value
+  const scale = previewDisplayScale.value
+  const referenceScale = overlaySizeScale(geom, text.position_reference, s.finalSize)
+  const lineCount = Math.max(1, textBlockPreviewText.value.split(/\r?\n/).length)
+  const minHeight = Math.max(
+    24,
+    lineCount * text.line_height_px * referenceScale * scale
+      + text.padding_px * referenceScale * scale * 2
+  )
+
+  const point = overlayPositionToCanvasPoint(
+    geom,
+    text.position_reference,
+    {
+      x: text.position_x_percent,
+      y: text.position_y_percent,
+    }
+  )
+  const widthPercent = textBlockWidthPercentOfCanvas(geom)
+
+  return {
+    left: `${(point.x / geom.canvasWidth) * 100}%`,
+    top: `${(point.y / geom.canvasHeight) * 100}%`,
+    width: `${widthPercent}%`,
+    minHeight: `${minHeight}px`,
+  }
+})
+
+function textBlockWidthPercentOfCanvas(geometry: ReturnType<typeof computePreviewLayout>): number {
+  const widthPercent = clamp(s.textBlock.max_width_percent, 1, 100)
+  if (s.textBlock.position_reference === 'canvas') return widthPercent
+  return (geometry.scaledWidth / geometry.canvasWidth) * widthPercent
+}
 
 const canRenderPrecisePreview = computed(() => {
   return (
@@ -648,6 +744,75 @@ function exifOrientationTransform(orientation: number | null): string {
   }
 }
 
+function startOverlayDrag(target: OverlayDragTarget, event: PointerEvent) {
+  if (processing.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  removeOverlayDragListeners()
+  draggedIndex.value = null
+  draggedOverlay.value = target
+  const shouldClearRenderedPreview = !!activeRenderedPreview.value
+  updateOverlayPositionFromPointer(target, event)
+  if (shouldClearRenderedPreview) {
+    store.clearRenderedPreview()
+  }
+  window.addEventListener('pointermove', handleOverlayPointerMove)
+  window.addEventListener('pointerup', finishOverlayDrag)
+  window.addEventListener('pointercancel', finishOverlayDrag)
+}
+
+function handleOverlayPointerMove(event: PointerEvent) {
+  const target = draggedOverlay.value
+  if (!target) return
+  event.preventDefault()
+  event.stopPropagation()
+  updateOverlayPositionFromPointer(target, event)
+}
+
+function finishOverlayDrag() {
+  if (!draggedOverlay.value) {
+    removeOverlayDragListeners()
+    return
+  }
+  draggedOverlay.value = null
+  removeOverlayDragListeners()
+  store.saveSettings()
+}
+
+function removeOverlayDragListeners() {
+  window.removeEventListener('pointermove', handleOverlayPointerMove)
+  window.removeEventListener('pointerup', finishOverlayDrag)
+  window.removeEventListener('pointercancel', finishOverlayDrag)
+}
+
+function updateOverlayPositionFromPointer(target: OverlayDragTarget, event: PointerEvent) {
+  const rect = previewFrameRef.value?.getBoundingClientRect()
+  if (!rect || rect.width <= 0 || rect.height <= 0) return
+  const geom = previewGeometry.value
+  const canvasPoint = {
+    x: clamp(((event.clientX - rect.left) / rect.width) * geom.canvasWidth, 0, geom.canvasWidth),
+    y: clamp(((event.clientY - rect.top) / rect.height) * geom.canvasHeight, 0, geom.canvasHeight),
+  }
+
+  if (target === 'watermark') {
+    const position = canvasPointToOverlayPosition(
+      geom,
+      s.watermark.position_reference,
+      canvasPoint
+    )
+    s.watermark.position_x_percent = roundOverlayPercent(position.x)
+    s.watermark.position_y_percent = roundOverlayPercent(position.y)
+  } else {
+    const position = canvasPointToOverlayPosition(
+      geom,
+      s.textBlock.position_reference,
+      canvasPoint
+    )
+    s.textBlock.position_x_percent = roundOverlayPercent(position.x)
+    s.textBlock.position_y_percent = roundOverlayPercent(position.y)
+  }
+}
+
 function clearImages() {
   store.setSelectedFiles([])
 }
@@ -739,7 +904,23 @@ watch(
   { flush: 'post' }
 )
 
+watch(
+  () => [
+    previewGeometry.value.canvasWidth,
+    previewGeometry.value.canvasHeight,
+    activeRenderedPreview.value?.final_width ?? 0,
+    activeRenderedPreview.value?.final_height ?? 0,
+    store.ui.filmstripCollapsed,
+  ],
+  async () => {
+    await nextTick()
+    updatePreviewFrameWidth()
+  },
+  { flush: 'post' }
+)
+
 onBeforeUnmount(() => {
+  removeOverlayDragListeners()
   previewResizeObserver?.disconnect()
 })
 </script>
@@ -1035,11 +1216,15 @@ onBeforeUnmount(() => {
 }
 
 .watermark-preview,
-.text-block-preview {
+.text-block-preview,
+.overlay-drag-hitbox {
   position: absolute;
   transform: translate(-50%, -50%);
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 5;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
 .watermark-preview {
@@ -1050,6 +1235,26 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   box-sizing: border-box;
+}
+
+.overlay-drag-hitbox {
+  min-width: 24px;
+  min-height: 24px;
+  border: 1px dashed transparent;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.overlay-drag-hitbox:hover,
+.overlay-dragging {
+  border-color: color-mix(in srgb, var(--color-accent), transparent 15%);
+  cursor: grabbing;
+}
+
+.watermark-preview.overlay-dragging,
+.text-block-preview.overlay-dragging {
+  outline: 1px dashed color-mix(in srgb, var(--color-accent), transparent 15%);
+  outline-offset: 2px;
 }
 
 .filmstrip-shell {

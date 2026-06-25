@@ -25,7 +25,10 @@ pub fn load_target_profile(config: &CollageConfig) -> Result<TargetColorProfile,
         });
     }
 
-    let is_srgb = matches!(config.color_management.target_profile, TargetProfileMode::Srgb);
+    let is_srgb = matches!(
+        config.color_management.target_profile,
+        TargetProfileMode::Srgb
+    );
     let icc = match config.color_management.target_profile {
         TargetProfileMode::Srgb => Profile::new_srgb()
             .icc()
@@ -81,11 +84,7 @@ pub fn prepare_image_with_metadata(
     target_profile: &TargetColorProfile,
 ) -> Result<(DynamicImage, Vec<String>), AppError> {
     let warnings = Vec::new();
-    let oriented = metadata::apply_orientation(
-        img,
-        orientation,
-        config.auto_orient_image(path),
-    );
+    let oriented = metadata::apply_orientation(img, orientation, config.auto_orient_image(path));
 
     if !target_profile.enabled {
         return Ok((oriented, warnings));
@@ -191,6 +190,7 @@ mod tests {
             outer_border_px: None,
             layout_percent: Default::default(),
             final_size: 2100,
+            target_aspect_ratio: None,
             dpi: 300,
             background_color: BackgroundColor::White,
             watermark: None,

@@ -20,7 +20,9 @@ pub fn read_orientation_from_bytes(data: &[u8]) -> Option<u16> {
     read_orientation_from_reader(&mut reader)
 }
 
-fn read_orientation_from_reader<R: std::io::BufRead + std::io::Seek>(reader: &mut R) -> Option<u16> {
+fn read_orientation_from_reader<R: std::io::BufRead + std::io::Seek>(
+    reader: &mut R,
+) -> Option<u16> {
     let exif = exif::Reader::new().read_from_container(&mut *reader).ok()?;
     let field = exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)?;
     field.value.get_uint(0).map(|value| value as u16)

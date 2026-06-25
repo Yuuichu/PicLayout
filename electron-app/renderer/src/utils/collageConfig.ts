@@ -1,5 +1,6 @@
 import type { Settings } from '../stores/appStore'
 import type { CollageConfig, ImageRotationDegrees } from '../types/protocol'
+import { resolveCanvasAspectRatio } from './aspectRatioPresets'
 
 export function buildCollageConfig(
   settings: Settings,
@@ -19,6 +20,7 @@ export function buildCollageConfig(
     outer_border_percent:
       settings.outerBorderMode === 'custom' ? settings.outerBorderPercent : null,
     final_size: settings.finalSize,
+    target_aspect_ratio: resolveCanvasAspectRatio(settings),
     dpi: settings.dpi,
     background_color: settings.backgroundColor,
     overwrite: false,

@@ -22,6 +22,10 @@ export interface CollageConfig {
   gap_y_px?: number
   outer_border_px?: number | null
   final_size?: number
+  target_aspect_ratio?: {
+    width: number
+    height: number
+  } | null
   dpi?: number
   background_color?: string
   overwrite?: boolean
@@ -39,6 +43,7 @@ export interface CollageConfig {
   watermark?: {
     path: string
     scale_percent?: number
+    position_reference?: PositionReference
     position_x_percent?: number
     position_y_percent?: number
   } | null
@@ -47,6 +52,7 @@ export interface CollageConfig {
 
 export type TextFontStyle = 'normal' | 'italic' | 'oblique'
 export type TextAlign = 'left' | 'center' | 'right'
+export type PositionReference = 'canvas' | 'content'
 
 export interface TextBlockConfig {
   text: string
@@ -60,6 +66,7 @@ export interface TextBlockConfig {
   text_rgba: [number, number, number, number]
   background_rgba: [number, number, number, number]
   padding_px: number
+  position_reference?: PositionReference
   position_x_percent: number
   position_y_percent: number
 }

@@ -1,45 +1,33 @@
-use std::path::Path;
-
-use image::{DynamicImage, GenericImageView, Rgba};
+use image::{DynamicImage, Rgba};
 use rayon::prelude::*;
 
 use crate::{
+    collage::PositionReferenceArea,
     color::{self, TargetColorProfile},
     config::{CollageConfig, WatermarkConfig},
     error::AppError,
     image_loader::open_image,
     image_proc::resize_high_quality_with_options,
-    jpeg_output::save_user_jpeg,
 };
-
-#[allow(dead_code)]
-pub fn add_watermark(
-    input: &Path,
-    output: &Path,
-    wm_config: &WatermarkConfig,
-    config: &CollageConfig,
-    target_profile: &TargetColorProfile,
-    icc_profile: Option<&[u8]>,
-) -> Result<Vec<String>, AppError> {
-    let base = open_image(input)?;
-    let (watermarked, warnings) = add_watermark_to_image(base, wm_config, config, target_profile)?;
-    save_user_jpeg(&watermarked, output, config, icc_profile)?;
-    Ok(warnings)
-}
 
 pub fn add_watermark_to_image(
     base: DynamicImage,
     wm_config: &WatermarkConfig,
     config: &CollageConfig,
     target_profile: &TargetColorProfile,
+    reference_area: PositionReferenceArea,
 ) -> Result<(DynamicImage, Vec<String>), AppError> {
-    let (img_w, img_h) = base.dimensions();
-
     let wm_raw = open_image(&wm_config.path)?;
     let (wm_raw, warnings) = color::prepare_image(&wm_config.path, wm_raw, config, target_profile)?;
 
     // 缩放水印
-    let scale = wm_config.scale_percent / 100.0;
+    let reference_scale = match wm_config.position_reference {
+        crate::config::PositionReference::Canvas => 1.0,
+        crate::config::PositionReference::Content => {
+            reference_area.width as f32 / config.final_size.max(1) as f32
+        }
+    };
+    let scale = wm_config.scale_percent / 100.0 * reference_scale;
     let wm_w = (wm_raw.width() as f32 * scale).round() as u32;
     let wm_h = (wm_raw.height() as f32 * scale).round() as u32;
     let wm_scaled = resize_high_quality_with_options(
@@ -49,11 +37,13 @@ pub fn add_watermark_to_image(
         config.linear_light_resize(),
     )?;
 
-    // 计算水印位置（中心对齐到百分比坐标）
-    let center_x = (img_w as f32 * wm_config.position_x_percent / 100.0) as i64;
-    let center_y = (img_h as f32 * wm_config.position_y_percent / 100.0) as i64;
-    let x = center_x - (wm_w / 2) as i64;
-    let y = center_y - (wm_h / 2) as i64;
+    let (x, y) = watermark_origin(
+        wm_w,
+        wm_h,
+        wm_config.position_x_percent,
+        wm_config.position_y_percent,
+        reference_area,
+    );
 
     // 将底图转为 RGBA，然后合成水印
     let mut canvas = base.to_rgba8();
@@ -62,6 +52,22 @@ pub fn add_watermark_to_image(
     composite_visible_overlay(&mut canvas, &wm_rgba, x, y);
 
     Ok((DynamicImage::ImageRgba8(canvas), warnings))
+}
+
+fn watermark_origin(
+    watermark_width: u32,
+    watermark_height: u32,
+    position_x_percent: f32,
+    position_y_percent: f32,
+    reference_area: PositionReferenceArea,
+) -> (i64, i64) {
+    let (center_x, center_y) =
+        reference_area.center_at_percent(position_x_percent, position_y_percent);
+
+    (
+        center_x - (watermark_width / 2) as i64,
+        center_y - (watermark_height / 2) as i64,
+    )
 }
 
 /// Alpha 合成（Porter-Duff "over" 操作）
@@ -141,4 +147,40 @@ pub fn composite_visible_overlay(
                 row[dst_idx..dst_idx + 4].copy_from_slice(&blended.0);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn watermark_origin_is_relative_to_full_canvas() {
+        let first = PositionReferenceArea {
+            x: 0,
+            y: 0,
+            width: 300,
+            height: 150,
+        };
+        let second = PositionReferenceArea {
+            x: 0,
+            y: 0,
+            width: 300,
+            height: 400,
+        };
+        assert_eq!(watermark_origin(30, 10, 50.0, 90.0, first), (135, 130));
+        assert_eq!(watermark_origin(30, 10, 50.0, 90.0, second), (135, 355));
+    }
+
+    #[test]
+    fn watermark_origin_uses_content_area_and_allows_outside_percentages() {
+        let content = PositionReferenceArea {
+            x: 40,
+            y: 30,
+            width: 200,
+            height: 100,
+        };
+        assert_eq!(watermark_origin(40, 20, 0.0, 0.0, content), (20, 20));
+        assert_eq!(watermark_origin(40, 20, 100.0, 100.0, content), (220, 120));
+        assert_eq!(watermark_origin(40, 20, -20.0, 150.0, content), (-20, 170));
+    }
 }

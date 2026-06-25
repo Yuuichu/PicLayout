@@ -27,6 +27,8 @@ const HARD_MAX_IMAGES: usize = 500;
 const MAX_JPEG_DIMENSION: u32 = u16::MAX as u32;
 const MIN_WATERMARK_SCALE_PERCENT: f32 = 10.0;
 const MAX_WATERMARK_SCALE_PERCENT: f32 = 300.0;
+const MIN_TARGET_ASPECT_RATIO: f64 = 0.1;
+const MAX_TARGET_ASPECT_RATIO: f64 = 10.0;
 const WARN_ESTIMATED_RGBA_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const HARD_ESTIMATED_RGBA_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
@@ -418,14 +420,27 @@ pub fn render_final_image(
         });
 
         if let Some(ref wm_config) = config.watermark {
-            let (watermarked, watermark_warnings) =
-                add_watermark_to_image(final_image, wm_config, config, &target_profile)?;
+            let reference_area = final_layout.position_reference_area(wm_config.position_reference);
+            let (watermarked, watermark_warnings) = add_watermark_to_image(
+                final_image,
+                wm_config,
+                config,
+                &target_profile,
+                reference_area,
+            )?;
             final_image = watermarked;
             warnings.extend(watermark_warnings);
         }
 
         if let Some(ref text_config) = config.text_block {
-            let (texted, text_warnings) = add_text_block_to_image(final_image, text_config)?;
+            let reference_area =
+                final_layout.position_reference_area(text_config.position_reference);
+            let (texted, text_warnings) = add_text_block_to_image(
+                final_image,
+                text_config,
+                reference_area,
+                config.final_size,
+            )?;
             final_image = texted;
             warnings.extend(text_warnings);
         }
@@ -495,6 +510,31 @@ fn validate_layout_percent_config(config: &CollageConfig) -> Result<(), AppError
         50.0,
         false,
     )
+}
+
+fn validate_target_aspect_ratio(config: &CollageConfig) -> Result<(), AppError> {
+    let Some(target) = config.target_aspect_ratio else {
+        return Ok(());
+    };
+
+    let ratio = target.normalized_ratio().ok_or_else(|| {
+        AppError::Processing(
+            "target aspect ratio width and height must be finite positive numbers".into(),
+        )
+    })?;
+    if !(MIN_TARGET_ASPECT_RATIO..=MAX_TARGET_ASPECT_RATIO).contains(&ratio) {
+        return Err(AppError::Processing(format!(
+            "target aspect ratio must be between {}:1 and {}:1; got {:.4}:1",
+            MIN_TARGET_ASPECT_RATIO, MAX_TARGET_ASPECT_RATIO, ratio
+        )));
+    }
+    target.canvas_dimensions(config.final_size).ok_or_else(|| {
+        AppError::Processing(
+            "target aspect ratio could not be converted to final dimensions".into(),
+        )
+    })?;
+
+    Ok(())
 }
 
 fn validate_percent_range(
@@ -607,6 +647,7 @@ fn validate_config(
     }
 
     validate_layout_percent_config(config)?;
+    validate_target_aspect_ratio(config)?;
 
     if config.final_size == 0 {
         return Err(AppError::Processing(
@@ -684,7 +725,13 @@ fn validate_config(
             config.final_size, double_outer_border
         )));
     }
-    ensure_rgba_allocation_safe(config.final_size, config.final_size, "final output")?;
+    let final_layout =
+        FinalCollageLayout::new(config.image_paths.len() as u32, config, outer_border)?;
+    ensure_rgba_allocation_safe(
+        final_layout.canvas_width,
+        final_layout.canvas_height,
+        "final output",
+    )?;
     let estimated_rgba_bytes = estimate_pipeline_rgba_bytes(config);
     if estimated_rgba_bytes > HARD_ESTIMATED_RGBA_BYTES {
         return Err(AppError::Processing(format!(
@@ -722,13 +769,9 @@ fn validate_config(
                 MIN_WATERMARK_SCALE_PERCENT, MAX_WATERMARK_SCALE_PERCENT
             )));
         }
-        if !watermark.position_x_percent.is_finite()
-            || !watermark.position_y_percent.is_finite()
-            || !(0.0..=100.0).contains(&watermark.position_x_percent)
-            || !(0.0..=100.0).contains(&watermark.position_y_percent)
-        {
+        if !watermark.position_x_percent.is_finite() || !watermark.position_y_percent.is_finite() {
             return Err(AppError::Processing(
-                "watermark position must be between 0 and 100 percent".into(),
+                "watermark position must contain finite percentages".into(),
             ));
         }
     }
@@ -787,7 +830,6 @@ fn processing_thread_count(config: &CollageConfig) -> usize {
 }
 
 fn estimate_pipeline_rgba_bytes(config: &CollageConfig) -> u64 {
-    let final_canvas = config.final_size as u64 * config.final_size as u64 * 4;
     let (planned_cols, planned_rows) = grid_shape(config.image_paths.len() as u32);
     let outer_border = resolve_outer_border(config, planned_cols);
     let layout = config.resolved_layout().unwrap_or(ResolvedLayout {
@@ -796,6 +838,12 @@ fn estimate_pipeline_rgba_bytes(config: &CollageConfig) -> u64 {
         gap_x_px: config.gap_x_px,
         gap_y_px: config.gap_y_px,
     });
+    let final_layout =
+        FinalCollageLayout::new(config.image_paths.len() as u32, config, outer_border).ok();
+    let final_canvas = final_layout
+        .as_ref()
+        .map(|layout| layout.canvas_width as u64 * layout.canvas_height as u64 * 4)
+        .unwrap_or_else(|| config.final_size as u64 * config.final_size as u64 * 4);
     let tile_size = layout.tile_size_px.max(1);
     let (grid_width, grid_height) = grid_dimensions(
         planned_cols,
@@ -808,11 +856,16 @@ fn estimate_pipeline_rgba_bytes(config: &CollageConfig) -> u64 {
         planned_cols.saturating_mul(tile_size),
         planned_rows.saturating_mul(tile_size),
     ));
-    let inner_size = config
-        .final_size
-        .saturating_sub(outer_border.saturating_mul(2))
-        .max(1);
-    let scale = inner_size as f64 / grid_width.max(grid_height).max(1) as f64;
+    let scale = final_layout
+        .as_ref()
+        .map(|layout| layout.scale)
+        .unwrap_or_else(|| {
+            let inner_size = config
+                .final_size
+                .saturating_sub(outer_border.saturating_mul(2))
+                .max(1);
+            inner_size as f64 / grid_width.max(grid_height).max(1) as f64
+        });
     let max_tile_edge = (layout.content_long_edge_px as f64 * scale).ceil().max(1.0) as u64;
     let per_tile = max_tile_edge * max_tile_edge * 4;
     let tile_cache = per_tile.saturating_mul(config.image_paths.len() as u64);
@@ -860,13 +913,9 @@ fn validate_text_block(text_block: &crate::config::TextBlockConfig) -> Result<()
             "text block max width must be between 1 and 100 percent".into(),
         ));
     }
-    if !text_block.position_x_percent.is_finite()
-        || !text_block.position_y_percent.is_finite()
-        || !(0.0..=100.0).contains(&text_block.position_x_percent)
-        || !(0.0..=100.0).contains(&text_block.position_y_percent)
-    {
+    if !text_block.position_x_percent.is_finite() || !text_block.position_y_percent.is_finite() {
         return Err(AppError::Processing(
-            "text block position must be between 0 and 100 percent".into(),
+            "text block position must contain finite percentages".into(),
         ));
     }
     Ok(())
@@ -876,9 +925,9 @@ fn validate_text_block(text_block: &crate::config::TextBlockConfig) -> Result<()
 mod tests {
     use super::*;
     use crate::config::{
-        BackgroundColor, ColorManagementConfig, LayoutPercentConfig, OutputSettings,
-        ProcessingMode, RenderingIntent, TargetProfileMode, TextAlign, TextBlockConfig,
-        TextFontStyle, WatermarkConfig,
+        AspectRatioConfig, BackgroundColor, ColorManagementConfig, LayoutPercentConfig,
+        OutputSettings, PositionReference, ProcessingMode, RenderingIntent, TargetProfileMode,
+        TextAlign, TextBlockConfig, TextFontStyle, WatermarkConfig,
     };
     use image::{DynamicImage, ImageBuffer};
     use std::fs;
@@ -900,6 +949,7 @@ mod tests {
             outer_border_px: None,
             layout_percent: Default::default(),
             final_size: 2100,
+            target_aspect_ratio: None,
             dpi: 300,
             background_color: BackgroundColor::White,
             watermark: None,
@@ -985,6 +1035,7 @@ mod tests {
         config.watermark = Some(WatermarkConfig {
             path: watermark,
             scale_percent: 100.0,
+            position_reference: PositionReference::Canvas,
             position_x_percent: 50.0,
             position_y_percent: 50.0,
         });
@@ -1024,6 +1075,7 @@ mod tests {
             text_rgba: [255, 255, 255, 255],
             background_rgba: [0, 0, 0, 128],
             padding_px: 4,
+            position_reference: PositionReference::Canvas,
             position_x_percent: 50.0,
             position_y_percent: 50.0,
         });
@@ -1051,6 +1103,7 @@ mod tests {
         config.watermark = Some(WatermarkConfig {
             path: watermark,
             scale_percent: 100.0,
+            position_reference: PositionReference::Canvas,
             position_x_percent: 80.0,
             position_y_percent: 80.0,
         });
@@ -1066,6 +1119,7 @@ mod tests {
             text_rgba: [255, 255, 0, 255],
             background_rgba: [0, 0, 0, 0],
             padding_px: 0,
+            position_reference: PositionReference::Canvas,
             position_x_percent: 50.0,
             position_y_percent: 50.0,
         });
@@ -1185,6 +1239,7 @@ mod tests {
             text_rgba: [255, 255, 255, 255],
             background_rgba: [0, 0, 0, 0],
             padding_px: 0,
+            position_reference: PositionReference::Canvas,
             position_x_percent: 50.0,
             position_y_percent: 50.0,
         });
@@ -1193,6 +1248,50 @@ mod tests {
             expected_output_paths(&config),
             vec![dir.path().join("output_collage_final_watermarked.jpg")]
         );
+    }
+
+    #[test]
+    fn text_block_position_validation_allows_values_outside_content_bounds() {
+        let text_block = TextBlockConfig {
+            text: "caption".into(),
+            font_family: "sans-serif".into(),
+            font_weight: 400,
+            font_style: TextFontStyle::Normal,
+            font_size_px: 24.0,
+            line_height_px: 30.0,
+            max_width_percent: 50.0,
+            align: TextAlign::Center,
+            text_rgba: [255, 255, 255, 255],
+            background_rgba: [0, 0, 0, 0],
+            padding_px: 0,
+            position_reference: PositionReference::Content,
+            position_x_percent: -45.0,
+            position_y_percent: 180.0,
+        };
+
+        assert!(validate_text_block(&text_block).is_ok());
+    }
+
+    #[test]
+    fn text_block_position_validation_rejects_non_finite_values() {
+        let text_block = TextBlockConfig {
+            text: "caption".into(),
+            font_family: "sans-serif".into(),
+            font_weight: 400,
+            font_style: TextFontStyle::Normal,
+            font_size_px: 24.0,
+            line_height_px: 30.0,
+            max_width_percent: 50.0,
+            align: TextAlign::Center,
+            text_rgba: [255, 255, 255, 255],
+            background_rgba: [0, 0, 0, 0],
+            padding_px: 0,
+            position_reference: PositionReference::Content,
+            position_x_percent: f32::NAN,
+            position_y_percent: 50.0,
+        };
+
+        assert!(validate_text_block(&text_block).is_err());
     }
 
     #[test]
@@ -1261,5 +1360,83 @@ mod tests {
 
         assert_eq!(resolve_outer_border(&config, 2), 2000);
         assert_eq!(resolve_outer_border(&config, 10), 400);
+    }
+
+    #[test]
+    fn auto_aspect_keeps_existing_collage_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.jpg");
+        let second = dir.path().join("second.jpg");
+        save_test_image(&first, 20, 10);
+        save_test_image(&second, 20, 10);
+        let mut config = base_config(dir.path().to_path_buf(), vec![first, second]);
+        config.final_size = 1000;
+        config.outer_border_px = Some(0);
+
+        let rendered = render_final_image(&config, false).unwrap();
+
+        assert_eq!(rendered.image.width(), 1000);
+        assert_eq!(rendered.image.height(), 500);
+    }
+
+    #[test]
+    fn target_aspect_ratio_sets_final_canvas_dimensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        save_test_image(&image, 20, 10);
+        let cases = [
+            (3.0, 4.0, 750, 1000),
+            (4.0, 3.0, 1000, 750),
+            (1.0, 1.0, 1000, 1000),
+            (1.91, 1.0, 1000, 524),
+        ];
+
+        for (width, height, expected_width, expected_height) in cases {
+            let mut config = base_config(dir.path().to_path_buf(), vec![image.clone()]);
+            config.final_size = 1000;
+            config.outer_border_px = Some(0);
+            config.target_aspect_ratio = Some(AspectRatioConfig { width, height });
+
+            let rendered = render_final_image(&config, false).unwrap();
+
+            assert_eq!(
+                (rendered.image.width(), rendered.image.height()),
+                (expected_width, expected_height)
+            );
+        }
+    }
+
+    #[test]
+    fn target_aspect_ratio_validation_rejects_extreme_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        save_test_image(&image, 20, 10);
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.target_aspect_ratio = Some(AspectRatioConfig {
+            width: 1000.0,
+            height: 1.0,
+        });
+
+        let err = validate_config(&config, true).unwrap_err();
+
+        assert!(err.to_string().contains("target aspect ratio"));
+    }
+
+    #[test]
+    fn target_aspect_ratio_validation_rejects_border_larger_than_short_side() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.jpg");
+        save_test_image(&image, 20, 10);
+        let mut config = base_config(dir.path().to_path_buf(), vec![image]);
+        config.final_size = 1000;
+        config.outer_border_px = Some(400);
+        config.target_aspect_ratio = Some(AspectRatioConfig {
+            width: 3.0,
+            height: 4.0,
+        });
+
+        let err = validate_config(&config, true).unwrap_err();
+
+        assert!(err.to_string().contains("too small"));
     }
 }

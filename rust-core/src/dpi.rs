@@ -115,7 +115,10 @@ mod tests {
 
     #[test]
     fn inserts_icc_app2_segments() {
-        let out = inject_icc_into_jpeg(inject_dpi_into_jpeg(minimal_jpeg_without_app0(), 300), Some(&[1, 2, 3]));
+        let out = inject_icc_into_jpeg(
+            inject_dpi_into_jpeg(minimal_jpeg_without_app0(), 300),
+            Some(&[1, 2, 3]),
+        );
 
         assert!(out.windows(12).any(|w| w == b"ICC_PROFILE\0"));
     }

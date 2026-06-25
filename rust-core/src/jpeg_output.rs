@@ -87,7 +87,10 @@ fn write_atomic(output: &Path, bytes: &[u8], overwrite: bool) -> Result<(), AppE
     }
 
     let dir = output.parent().ok_or_else(|| {
-        AppError::Processing(format!("output path has no parent directory: {}", output.display()))
+        AppError::Processing(format!(
+            "output path has no parent directory: {}",
+            output.display()
+        ))
     })?;
     let mut temp = Builder::new()
         .prefix(".piclayout-")
@@ -97,8 +100,7 @@ fn write_atomic(output: &Path, bytes: &[u8], overwrite: bool) -> Result<(), AppE
     temp.flush()?;
 
     if overwrite {
-        temp.persist(output)
-            .map_err(|e| AppError::Io(e.error))?;
+        temp.persist(output).map_err(|e| AppError::Io(e.error))?;
     } else {
         temp.persist_noclobber(output)
             .map_err(|e| AppError::Io(e.error))?;
@@ -134,6 +136,7 @@ mod tests {
             outer_border_px: None,
             layout_percent: Default::default(),
             final_size: 2100,
+            target_aspect_ratio: None,
             dpi: 300,
             background_color: BackgroundColor::White,
             watermark: None,

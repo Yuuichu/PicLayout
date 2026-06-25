@@ -10,6 +10,26 @@
 
     <template v-if="s.textBlockEnabled">
       <div class="text-grid">
+        <div class="form-row compact-row">
+          <label>定位参照</label>
+          <div class="segmented-control">
+            <button
+              type="button"
+              :class="{ active: s.textBlock.position_reference === 'content' }"
+              @click="setPositionReference('content')"
+            >
+              拼图区域
+            </button>
+            <button
+              type="button"
+              :class="{ active: s.textBlock.position_reference === 'canvas' }"
+              @click="setPositionReference('canvas')"
+            >
+              整张画布
+            </button>
+          </div>
+        </div>
+
         <div class="form-row compact-row wide-row">
           <label>文本内容</label>
           <textarea
@@ -95,15 +115,15 @@
 
         <div class="form-row compact-row">
           <label>水平位置</label>
-          <input v-model.number="s.textBlock.position_x_percent" type="range" min="0" max="100" step="0.01" class="range-input" @input="save" />
-          <input v-model.number="s.textBlock.position_x_percent" type="number" min="0" max="100" step="0.01" class="number-input" @change="save" />
+          <input :key="`text-x-${s.textBlock.position_reference}-${positionBounds.minX}-${positionBounds.maxX}`" v-model.number="s.textBlock.position_x_percent" type="range" :min="positionBounds.minX" :max="positionBounds.maxX" step="0.01" class="range-input" @input="save" />
+          <input v-model.number="s.textBlock.position_x_percent" type="number" step="0.01" class="number-input" @change="save" />
           <span class="hint">%</span>
         </div>
 
         <div class="form-row compact-row">
           <label>垂直位置</label>
-          <input v-model.number="s.textBlock.position_y_percent" type="range" min="0" max="100" step="0.01" class="range-input" @input="save" />
-          <input v-model.number="s.textBlock.position_y_percent" type="number" min="0" max="100" step="0.01" class="number-input" @change="save" />
+          <input :key="`text-y-${s.textBlock.position_reference}-${positionBounds.minY}-${positionBounds.maxY}`" v-model.number="s.textBlock.position_y_percent" type="range" :min="positionBounds.minY" :max="positionBounds.maxY" step="0.01" class="range-input" @input="save" />
+          <input v-model.number="s.textBlock.position_y_percent" type="number" step="0.01" class="number-input" @change="save" />
           <span class="hint">%</span>
         </div>
       </div>
@@ -114,10 +134,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useAppStore } from '../stores/appStore'
-import type { FontFaceInfo } from '../types/protocol'
+import type { FontFaceInfo, PositionReference } from '../types/protocol'
+import {
+  convertOverlayPositionReference,
+  overlaySizeScale,
+  overlayWidthReference,
+  overlayPositionBounds,
+  roundOverlayPercent,
+} from '../utils/overlayPosition'
+import type { PreviewGeometry } from '../utils/previewLayout'
 
-defineProps<{
+const props = defineProps<{
   embedded?: boolean
+  geometry: PreviewGeometry
 }>()
 
 const store = useAppStore()
@@ -133,6 +162,45 @@ const fontFamilies = computed(() => {
   }
   return [...seen].sort((a, b) => a.localeCompare(b))
 })
+
+const positionBounds = computed(() =>
+  overlayPositionBounds(props.geometry, s.textBlock.position_reference)
+)
+
+function setPositionReference(reference: PositionReference) {
+  const currentReference = s.textBlock.position_reference
+  if (reference === currentReference) return
+  const converted = convertOverlayPositionReference(
+    props.geometry,
+    currentReference,
+    reference,
+    {
+      x: s.textBlock.position_x_percent,
+      y: s.textBlock.position_y_percent,
+    }
+  )
+  const fromScale = overlaySizeScale(props.geometry, currentReference, s.finalSize)
+  const toScale = overlaySizeScale(props.geometry, reference, s.finalSize)
+  const fromWidth = overlayWidthReference(props.geometry, currentReference)
+  const toWidth = overlayWidthReference(props.geometry, reference)
+  s.textBlock.position_reference = reference
+  s.textBlock.font_size_px = roundOverlayPercent(
+    s.textBlock.font_size_px * fromScale / toScale
+  )
+  s.textBlock.line_height_px = roundOverlayPercent(
+    s.textBlock.line_height_px * fromScale / toScale
+  )
+  s.textBlock.padding_px = Math.max(
+    0,
+    Math.round(s.textBlock.padding_px * fromScale / toScale)
+  )
+  s.textBlock.max_width_percent = roundOverlayPercent(
+    Math.min(100, Math.max(1, s.textBlock.max_width_percent * fromWidth / toWidth))
+  )
+  s.textBlock.position_x_percent = roundOverlayPercent(converted.x)
+  s.textBlock.position_y_percent = roundOverlayPercent(converted.y)
+  save()
+}
 
 onMounted(async () => {
   try {
@@ -260,6 +328,37 @@ function save() {
 
 .range-input {
   width: 100%;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.segmented-control button {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-control);
+  color: var(--color-text-muted);
+  padding: 7px 8px;
+  font-size: 11px;
+}
+
+.segmented-control button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.segmented-control button:last-child {
+  margin-left: -1px;
+  border-radius: 0 4px 4px 0;
+}
+
+.segmented-control button.active {
+  position: relative;
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent), transparent 82%);
+  color: var(--color-text);
 }
 
 @media (max-width: 760px) {

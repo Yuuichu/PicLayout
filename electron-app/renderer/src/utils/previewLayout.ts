@@ -1,6 +1,9 @@
+import type { TargetAspectRatio } from '../types/protocol'
+
 export interface PreviewLayoutInput {
   imageCount: number
   finalSize: number
+  targetAspectRatio?: TargetAspectRatio | null
   contentLongEdgePercent: number
   tileBorderPercent: number
   gapXPercent: number
@@ -22,6 +25,8 @@ export interface PreviewGeometry {
   gridHeight: number
   scaledWidth: number
   scaledHeight: number
+  contentX: number
+  contentY: number
   canvasWidth: number
   canvasHeight: number
   scale: number
@@ -53,12 +58,19 @@ export function computePreviewLayout(input: PreviewLayoutInput): PreviewGeometry
   const border = input.outerBorderMode === 'custom'
     ? Math.max(0, percentToPx(input.outerBorderPercent, finalSize))
     : percentToPx(calculateDynamicBorderPercent(cols), finalSize)
-  const innerSize = Math.max(1, finalSize - border * 2)
-  const scale = innerSize / Math.max(gridWidth, gridHeight)
-  const scaledWidth = Math.max(1, Math.round(gridWidth * scale))
-  const scaledHeight = Math.max(1, Math.round(gridHeight * scale))
-  const canvasWidth = scaledWidth + border * 2
-  const canvasHeight = scaledHeight + border * 2
+  const targetCanvas = resolveTargetCanvas(finalSize, input.targetAspectRatio)
+  const doubleBorder = border * 2
+  const availableWidth = Math.max(1, (targetCanvas?.width ?? finalSize) - doubleBorder)
+  const availableHeight = Math.max(1, (targetCanvas?.height ?? finalSize) - doubleBorder)
+  const scale = targetCanvas
+    ? Math.min(availableWidth / Math.max(1, gridWidth), availableHeight / Math.max(1, gridHeight))
+    : Math.min(availableWidth, availableHeight) / Math.max(gridWidth, gridHeight)
+  const scaledWidth = Math.min(availableWidth, Math.max(1, Math.round(gridWidth * scale)))
+  const scaledHeight = Math.min(availableHeight, Math.max(1, Math.round(gridHeight * scale)))
+  const contentX = border + Math.max(0, Math.round((availableWidth - scaledWidth) / 2))
+  const contentY = border + Math.max(0, Math.round((availableHeight - scaledHeight) / 2))
+  const canvasWidth = targetCanvas?.width ?? scaledWidth + doubleBorder
+  const canvasHeight = targetCanvas?.height ?? scaledHeight + doubleBorder
 
   return {
     cols,
@@ -73,6 +85,8 @@ export function computePreviewLayout(input: PreviewLayoutInput): PreviewGeometry
     gridHeight,
     scaledWidth,
     scaledHeight,
+    contentX,
+    contentY,
     canvasWidth,
     canvasHeight,
     scale,
@@ -95,10 +109,10 @@ export function computeTilePlacement(
   )
   const offsetX = Math.floor(Math.max(0, geometry.tileSize - fittedWidth) / 2)
   const offsetY = Math.floor(Math.max(0, geometry.tileSize - fittedHeight) / 2)
-  const x0 = scaleCoord(tileX + offsetX, geometry.scale) + geometry.border
-  const y0 = scaleCoord(tileY + offsetY, geometry.scale) + geometry.border
-  const x1 = scaleCoord(tileX + offsetX + fittedWidth, geometry.scale) + geometry.border
-  const y1 = scaleCoord(tileY + offsetY + fittedHeight, geometry.scale) + geometry.border
+  const x0 = scaleCoord(tileX + offsetX, geometry.scale) + geometry.contentX
+  const y0 = scaleCoord(tileY + offsetY, geometry.scale) + geometry.contentY
+  const x1 = scaleCoord(tileX + offsetX + fittedWidth, geometry.scale) + geometry.contentX
+  const y1 = scaleCoord(tileY + offsetY + fittedHeight, geometry.scale) + geometry.contentY
 
   return {
     x: x0,
@@ -113,10 +127,10 @@ export function computeTileFrame(geometry: PreviewGeometry, index: number): Prev
   const row = Math.floor(index / geometry.cols)
   const tileX = col * (geometry.tileSize + geometry.gapX)
   const tileY = row * (geometry.tileSize + geometry.gapY)
-  const x0 = scaleCoord(tileX, geometry.scale) + geometry.border
-  const y0 = scaleCoord(tileY, geometry.scale) + geometry.border
-  const x1 = scaleCoord(tileX + geometry.tileSize, geometry.scale) + geometry.border
-  const y1 = scaleCoord(tileY + geometry.tileSize, geometry.scale) + geometry.border
+  const x0 = scaleCoord(tileX, geometry.scale) + geometry.contentX
+  const y0 = scaleCoord(tileY, geometry.scale) + geometry.contentY
+  const x1 = scaleCoord(tileX + geometry.tileSize, geometry.scale) + geometry.contentX
+  const y1 = scaleCoord(tileY + geometry.tileSize, geometry.scale) + geometry.contentY
 
   return {
     x: x0,
@@ -175,4 +189,27 @@ function scaleCoord(value: number, scale: number): number {
 function normalizeNumber(value: unknown, fallback: number): number {
   const numberValue = Number(value)
   return Number.isFinite(numberValue) ? numberValue : fallback
+}
+
+function resolveTargetCanvas(
+  finalSize: number,
+  targetAspectRatio: TargetAspectRatio | null | undefined
+): { width: number; height: number } | null {
+  if (!targetAspectRatio) return null
+
+  const width = normalizeNumber(targetAspectRatio.width, 0)
+  const height = normalizeNumber(targetAspectRatio.height, 0)
+  if (width <= 0 || height <= 0) return null
+
+  if (width >= height) {
+    return {
+      width: finalSize,
+      height: Math.max(1, Math.round(finalSize * height / width)),
+    }
+  }
+
+  return {
+    width: Math.max(1, Math.round(finalSize * width / height)),
+    height: finalSize,
+  }
 }

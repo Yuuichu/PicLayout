@@ -15,6 +15,26 @@
     <template v-if="s.watermarkEnabled">
       <div class="watermark-grid">
         <div class="form-row compact-row">
+          <label>定位参照</label>
+          <div class="segmented-control">
+            <button
+              type="button"
+              :class="{ active: s.watermark.position_reference === 'content' }"
+              @click="setPositionReference('content')"
+            >
+              拼图区域
+            </button>
+            <button
+              type="button"
+              :class="{ active: s.watermark.position_reference === 'canvas' }"
+              @click="setPositionReference('canvas')"
+            >
+              整张画布
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row compact-row">
           <label>水印图片</label>
           <button class="btn-secondary watermark-btn" :disabled="store.processing" @click="selectWatermark">
             选择图片
@@ -50,19 +70,18 @@
         <div class="form-row compact-row">
           <label>水平位置</label>
           <input
+            :key="`watermark-x-${s.watermark.position_reference}-${positionBounds.minX}-${positionBounds.maxX}`"
             v-model.number="s.watermark.position_x_percent"
             class="range-input"
             type="range"
-            min="0"
-            max="100"
+            :min="positionBounds.minX"
+            :max="positionBounds.maxX"
             step="0.01"
             @input="save"
           />
           <input
             v-model.number="s.watermark.position_x_percent"
             type="number"
-            min="0"
-            max="100"
             step="0.01"
             class="number-input"
             @change="save"
@@ -73,19 +92,18 @@
         <div class="form-row compact-row">
           <label>垂直位置</label>
           <input
+            :key="`watermark-y-${s.watermark.position_reference}-${positionBounds.minY}-${positionBounds.maxY}`"
             v-model.number="s.watermark.position_y_percent"
             class="range-input"
             type="range"
-            min="0"
-            max="100"
+            :min="positionBounds.minY"
+            :max="positionBounds.maxY"
             step="0.01"
             @input="save"
           />
           <input
             v-model.number="s.watermark.position_y_percent"
             type="number"
-            min="0"
-            max="100"
             step="0.01"
             class="number-input"
             @change="save"
@@ -102,9 +120,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
+import type { PositionReference } from '../types/protocol'
+import {
+  convertOverlayPositionReference,
+  overlaySizeScale,
+  overlayPositionBounds,
+  roundOverlayPercent,
+} from '../utils/overlayPosition'
+import type { PreviewGeometry } from '../utils/previewLayout'
 
-defineProps<{
+const props = defineProps<{
   embedded?: boolean
+  geometry: PreviewGeometry
 }>()
 
 const store = useAppStore()
@@ -114,6 +141,33 @@ const watermarkBasename = computed(() => {
   if (!s.watermark.path) return ''
   return s.watermark.path.replace(/\\/g, '/').split('/').pop() ?? s.watermark.path
 })
+
+const positionBounds = computed(() =>
+  overlayPositionBounds(props.geometry, s.watermark.position_reference)
+)
+
+function setPositionReference(reference: PositionReference) {
+  const currentReference = s.watermark.position_reference
+  if (reference === currentReference) return
+  const converted = convertOverlayPositionReference(
+    props.geometry,
+    currentReference,
+    reference,
+    {
+      x: s.watermark.position_x_percent,
+      y: s.watermark.position_y_percent,
+    }
+  )
+  const fromScale = overlaySizeScale(props.geometry, currentReference, s.finalSize)
+  const toScale = overlaySizeScale(props.geometry, reference, s.finalSize)
+  s.watermark.position_reference = reference
+  s.watermark.scale_percent = roundOverlayPercent(
+    Math.min(300, Math.max(10, s.watermark.scale_percent * fromScale / toScale))
+  )
+  s.watermark.position_x_percent = roundOverlayPercent(converted.x)
+  s.watermark.position_y_percent = roundOverlayPercent(converted.y)
+  save()
+}
 
 async function selectWatermark() {
   const path = await window.electronAPI.openWatermark()
@@ -198,6 +252,37 @@ function save() {
 
 .range-input {
   width: 100%;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.segmented-control button {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-control);
+  color: var(--color-text-muted);
+  padding: 7px 8px;
+  font-size: 11px;
+}
+
+.segmented-control button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.segmented-control button:last-child {
+  margin-left: -1px;
+  border-radius: 0 4px 4px 0;
+}
+
+.segmented-control button.active {
+  position: relative;
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent), transparent 82%);
+  color: var(--color-text);
 }
 
 .number-input {

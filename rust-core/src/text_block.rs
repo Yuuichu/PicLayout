@@ -2,10 +2,11 @@ use cosmic_text::{
     Align, Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, Style, SwashCache, Weight,
     Wrap,
 };
-use image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
+use image::{DynamicImage, Rgba, RgbaImage};
 
 use crate::{
-    config::{TextAlign, TextBlockConfig, TextFontStyle},
+    collage::PositionReferenceArea,
+    config::{PositionReference, TextAlign, TextBlockConfig, TextFontStyle},
     error::AppError,
     fonts,
     watermark::{alpha_composite, composite_visible_overlay},
@@ -16,13 +17,15 @@ const MAX_TEXT_BLOCK_CANVAS_HEIGHT: f32 = 100_000.0;
 pub fn add_text_block_to_image(
     base: DynamicImage,
     text_config: &TextBlockConfig,
+    reference_area: PositionReferenceArea,
+    final_size: u32,
 ) -> Result<(DynamicImage, Vec<String>), AppError> {
     let text = text_config.text.trim();
     if text.is_empty() {
         return Err(AppError::Processing("text block cannot be empty".into()));
     }
 
-    let (img_w, img_h) = base.dimensions();
+    let img_w = base.width();
     let mut warnings = Vec::new();
     if !fonts::system_has_family(&text_config.font_family) {
         warnings.push(format!(
@@ -31,9 +34,19 @@ pub fn add_text_block_to_image(
         ));
     }
 
-    let block = render_text_block(text_config, img_w)?;
-    let center_x = (img_w as f32 * text_config.position_x_percent / 100.0).round() as i64;
-    let center_y = (img_h as f32 * text_config.position_y_percent / 100.0).round() as i64;
+    let width_reference = match text_config.position_reference {
+        PositionReference::Canvas => img_w,
+        PositionReference::Content => reference_area.width.max(1),
+    };
+    let size_scale = match text_config.position_reference {
+        PositionReference::Canvas => 1.0,
+        PositionReference::Content => reference_area.width as f32 / final_size.max(1) as f32,
+    };
+    let block = render_text_block(text_config, width_reference, size_scale)?;
+    let (center_x, center_y) = reference_area.center_at_percent(
+        text_config.position_x_percent,
+        text_config.position_y_percent,
+    );
     let x = center_x - (block.width() / 2) as i64;
     let y = center_y - (block.height() / 2) as i64;
 
@@ -43,11 +56,21 @@ pub fn add_text_block_to_image(
     Ok((DynamicImage::ImageRgba8(canvas), warnings))
 }
 
-fn render_text_block(text_config: &TextBlockConfig, canvas_width: u32) -> Result<RgbaImage, AppError> {
+fn render_text_block(
+    text_config: &TextBlockConfig,
+    canvas_width: u32,
+    size_scale: f32,
+) -> Result<RgbaImage, AppError> {
     let mut font_system = FontSystem::new();
     let mut swash_cache = SwashCache::new();
-    let metrics = Metrics::new(text_config.font_size_px, text_config.line_height_px);
-    let content_width = text_config_content_width(text_config, canvas_width)?;
+    let metrics = Metrics::new(
+        (text_config.font_size_px * size_scale).max(1.0),
+        (text_config.line_height_px * size_scale).max(1.0),
+    );
+    let padding = (text_config.padding_px as f32 * size_scale)
+        .round()
+        .max(0.0) as u32;
+    let content_width = text_config_content_width(text_config, canvas_width, padding)?;
     let attrs = text_attrs(text_config);
 
     let mut buffer = Buffer::new(&mut font_system, metrics);
@@ -76,19 +99,24 @@ fn render_text_block(text_config: &TextBlockConfig, canvas_width: u32) -> Result
     for run in buffer.layout_runs() {
         for glyph in run.glyphs {
             let physical = glyph.physical((0.0, run.line_y), 1.0);
-            swash_cache.with_pixels(&mut font_system, physical.cache_key, text_color, |dx, dy, color| {
-                let px = physical.x + dx;
-                let py = physical.y + dy;
-                let rgba = color.as_rgba();
-                if rgba[3] == 0 {
-                    return;
-                }
-                min_x = min_x.min(px);
-                min_y = min_y.min(py);
-                max_x = max_x.max(px);
-                max_y = max_y.max(py);
-                pixels.push((px, py, Rgba(rgba)));
-            });
+            swash_cache.with_pixels(
+                &mut font_system,
+                physical.cache_key,
+                text_color,
+                |dx, dy, color| {
+                    let px = physical.x + dx;
+                    let py = physical.y + dy;
+                    let rgba = color.as_rgba();
+                    if rgba[3] == 0 {
+                        return;
+                    }
+                    min_x = min_x.min(px);
+                    min_y = min_y.min(py);
+                    max_x = max_x.max(px);
+                    max_y = max_y.max(py);
+                    pixels.push((px, py, Rgba(rgba)));
+                },
+            );
         }
     }
 
@@ -98,7 +126,6 @@ fn render_text_block(text_config: &TextBlockConfig, canvas_width: u32) -> Result
         ));
     }
 
-    let padding = text_config.padding_px;
     let left_adjust = if min_x < 0 { (-min_x) as u32 } else { 0 };
     let top_adjust = if min_y < 0 { (-min_y) as u32 } else { 0 };
     let text_height = (max_y - min_y + 1).max(1) as u32;
@@ -111,7 +138,8 @@ fn render_text_block(text_config: &TextBlockConfig, canvas_width: u32) -> Result
         .and_then(|h| h.checked_add(padding.saturating_mul(2)))
         .ok_or_else(|| AppError::Processing("text block height calculation overflowed".into()))?;
 
-    let mut block = RgbaImage::from_pixel(block_width, block_height, Rgba(text_config.background_rgba));
+    let mut block =
+        RgbaImage::from_pixel(block_width, block_height, Rgba(text_config.background_rgba));
     for (px, py, color) in pixels {
         let out_x = px + padding as i32 + left_adjust as i32;
         let out_y = py - min_y + padding as i32 + top_adjust as i32;
@@ -132,11 +160,12 @@ fn render_text_block(text_config: &TextBlockConfig, canvas_width: u32) -> Result
 fn text_config_content_width(
     text_config: &TextBlockConfig,
     canvas_width: u32,
+    padding: u32,
 ) -> Result<u32, AppError> {
     let width = (canvas_width as f32 * text_config.max_width_percent / 100.0)
         .round()
         .max(1.0) as u32;
-    Ok(width.saturating_sub(text_config.padding_px.saturating_mul(2)).max(1))
+    Ok(width.saturating_sub(padding.saturating_mul(2)).max(1))
 }
 
 fn text_attrs(text_config: &TextBlockConfig) -> Attrs<'_> {
@@ -194,6 +223,7 @@ mod tests {
             text_rgba: [255, 255, 255, 255],
             background_rgba: [0, 0, 0, 128],
             padding_px: 4,
+            position_reference: crate::config::PositionReference::Canvas,
             position_x_percent: 50.0,
             position_y_percent: 50.0,
         }
@@ -202,15 +232,45 @@ mod tests {
     #[test]
     fn empty_text_block_errors() {
         let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([0, 0, 0, 255])));
-        let err = add_text_block_to_image(img, &text_config("   ")).unwrap_err();
+        let err = add_text_block_to_image(
+            img,
+            &text_config("   "),
+            PositionReferenceArea {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            100,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("text block cannot be empty"));
     }
 
     #[test]
     fn text_block_renders_visible_pixels() {
         let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(400, 300, Rgba([0, 0, 0, 255])));
-        let (out, _) = add_text_block_to_image(img, &text_config("Hello\n中文")).unwrap();
+        let (out, _) = add_text_block_to_image(
+            img,
+            &text_config("Hello\n中文"),
+            PositionReferenceArea {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 300,
+            },
+            400,
+        )
+        .unwrap();
         let rgba = out.to_rgba8();
         assert!(rgba.pixels().any(|pixel| pixel.0 != [0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn text_content_width_uses_selected_reference_width() {
+        let config = text_config("Hello");
+
+        assert_eq!(text_config_content_width(&config, 400, 4).unwrap(), 192);
+        assert_eq!(text_config_content_width(&config, 200, 4).unwrap(), 92);
     }
 }

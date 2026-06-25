@@ -56,6 +56,44 @@
           </label>
         </div>
 
+        <div class="stacked-field">
+          <span>画布比例</span>
+          <select v-model="s.canvasAspectPreset" @change="handleCanvasAspectChange">
+            <option
+              v-for="option in canvasAspectOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+          <div v-if="s.canvasAspectPreset === 'custom'" class="field-grid custom-aspect-grid">
+            <label class="compact-field">
+              <span>宽</span>
+              <input
+                v-model.number="s.customAspectWidth"
+                type="number"
+                min="0.1"
+                max="100"
+                step="0.01"
+                @change="handleCustomAspectChange"
+              />
+            </label>
+            <label class="compact-field">
+              <span>高</span>
+              <input
+                v-model.number="s.customAspectHeight"
+                type="number"
+                min="0.1"
+                max="100"
+                step="0.01"
+                @change="handleCustomAspectChange"
+              />
+            </label>
+          </div>
+          <em>{{ currentCanvasAspectHelp }}</em>
+        </div>
+
         <div class="stacked-field canvas-margin-field">
           <span>最终外边距 (%)</span>
           <div class="segmented-control">
@@ -206,11 +244,11 @@
       </section>
 
       <section v-else-if="activeTool === 'watermark'" class="tool-section">
-        <WatermarkSettings embedded />
+        <WatermarkSettings embedded :geometry="overlayGeometry" />
       </section>
 
       <section v-else-if="activeTool === 'text'" class="tool-section">
-        <TextBlockSettings embedded />
+        <TextBlockSettings embedded :geometry="overlayGeometry" />
       </section>
 
       <section v-else class="tool-section">
@@ -226,6 +264,13 @@ import { computed, ref } from 'vue'
 import { Activity, Droplets, FileOutput, LayoutGrid, Palette, Type } from 'lucide-vue-next'
 import { useAppStore } from '../stores/appStore'
 import { BACKGROUND_COLOR_OPTIONS, type BackgroundColor, type ProcessingMode } from '../types/protocol'
+import {
+  CANVAS_ASPECT_OPTIONS,
+  findCanvasAspectOption,
+  formatAspectRatio,
+  resolveCanvasAspectRatio,
+} from '../utils/aspectRatioPresets'
+import { computePreviewLayout } from '../utils/previewLayout'
 import ProgressBar from './ProgressBar.vue'
 import TextBlockSettings from './TextBlockSettings.vue'
 import WatermarkSettings from './WatermarkSettings.vue'
@@ -251,6 +296,7 @@ const tools: { id: ToolId; label: string; icon: unknown }[] = [
 const store = useAppStore()
 const s = store.settings
 const colorOptions = BACKGROUND_COLOR_OPTIONS
+const canvasAspectOptions = CANVAS_ASPECT_OPTIONS
 const activeTool = ref<ToolId>('layout')
 const layoutPercentRanges: Record<LayoutPercentKey, { min: number; max: number; curve?: LayoutSliderCurve }> = {
   contentLongEdgePercent: { min: 0.01, max: 100 },
@@ -263,6 +309,27 @@ const layoutPercentRanges: Record<LayoutPercentKey, { min: number; max: number; 
 const currentColorLabel = computed(
   () => colorOptions.find((o) => o.value === s.backgroundColor)?.label ?? ''
 )
+
+const currentCanvasAspectHelp = computed(() => {
+  if (s.canvasAspectPreset === 'custom') {
+    return `Custom ${formatAspectRatio({ width: s.customAspectWidth, height: s.customAspectHeight })}`
+  }
+
+  const option = findCanvasAspectOption(s.canvasAspectPreset)
+  return option.ratio ? `${option.shortLabel} ${formatAspectRatio(option.ratio)}` : 'Auto keeps the collage shape'
+})
+
+const overlayGeometry = computed(() => computePreviewLayout({
+  imageCount: store.selectedFiles.length,
+  finalSize: s.finalSize,
+  targetAspectRatio: resolveCanvasAspectRatio(s),
+  contentLongEdgePercent: s.contentLongEdgePercent,
+  tileBorderPercent: s.tileBorderPercent,
+  gapXPercent: s.gapXPercent,
+  gapYPercent: s.gapYPercent,
+  outerBorderMode: s.outerBorderMode,
+  outerBorderPercent: s.outerBorderPercent,
+}))
 
 const iccBasename = computed(() => {
   if (!s.targetProfilePath) return ''
@@ -283,6 +350,22 @@ function setProcessingMode(mode: ProcessingMode) {
 function setOuterBorderMode(mode: 'auto' | 'custom') {
   s.outerBorderMode = mode
   save()
+}
+
+function handleCanvasAspectChange() {
+  save()
+}
+
+function handleCustomAspectChange() {
+  s.customAspectWidth = normalizeAspectNumber(s.customAspectWidth, 3)
+  s.customAspectHeight = normalizeAspectNumber(s.customAspectHeight, 4)
+  save()
+}
+
+function normalizeAspectNumber(value: number, fallback: number) {
+  const numberValue = Number(value)
+  const normalized = Number.isFinite(numberValue) ? numberValue : fallback
+  return Math.round(Math.min(100, Math.max(0.1, normalized)) * 100) / 100
 }
 
 function roundLayoutPercent(value: number) {
