@@ -77,7 +77,7 @@ PicLayout 是一款面向摄影师和内容创作者的 Windows 拼图排版工�
 ### 安装
 
 1. 打开 [Releases](https://github.com/Yuuichu/PicLayout/releases/latest)。
-2. 下载 `PicLayout Setup 1.1.0.exe`。
+2. 下载 `PicLayout.Setup.1.1.0.exe`。
 3. 运行安装程序并选择安装目录。
 
 当前安装包面向 Windows x64。安装包未进行商业代码签名，Windows SmartScreen 可能显示安全提示。
