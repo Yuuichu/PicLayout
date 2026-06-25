@@ -4,13 +4,13 @@ export interface CollageConfig {
   processing_mode: ProcessingMode
   output_dir: string
   prefix: string
-  resample_size: number
-  border_size: number
-  tile_border_px?: number | null
-  gap_x_px: number
-  gap_y_px: number
-  outer_border_px?: number | null
+  content_long_edge_percent: number
+  tile_border_percent: number
+  gap_x_percent: number
+  gap_y_percent: number
+  outer_border_percent?: number | null
   final_size: number
+  target_aspect_ratio?: TargetAspectRatio | null
   dpi: number
   background_color: BackgroundColor
   watermark: WatermarkConfig | null
@@ -23,12 +23,20 @@ export interface CollageConfig {
 export type ImageRotationDegrees = 0 | 90 | 180 | 270
 export type ProcessingMode = 'standard_high_quality' | 'maximum_quality' | 'fast_preview'
 
+export interface TargetAspectRatio {
+  width: number
+  height: number
+}
+
+export type PositionReference = 'canvas' | 'content'
+
 export type BackgroundColor =
   | 'white' | 'black' | 'grey' | 'lightgrey' | 'beige' | 'lightblue' | 'lightyellow'
 
 export interface WatermarkConfig {
   path: string
   scale_percent: number
+  position_reference: PositionReference
   position_x_percent: number
   position_y_percent: number
 }
@@ -48,6 +56,7 @@ export interface TextBlockConfig {
   text_rgba: [number, number, number, number]
   background_rgba: [number, number, number, number]
   padding_px: number
+  position_reference: PositionReference
   position_x_percent: number
   position_y_percent: number
 }
@@ -102,6 +111,22 @@ export interface CollageResult {
   stage_timings: StageTiming[]
 }
 
+export interface PreviewImageResult {
+  data_url: string
+  width: number
+  height: number
+  final_width: number
+  final_height: number
+}
+
+export interface PreviewResult extends PreviewImageResult {
+  processed_count: number
+  failed_images: FailedImage[]
+  warnings: string[]
+  elapsed_ms: number
+  stage_timings: StageTiming[]
+}
+
 export type ProgressMessage =
   | { type: 'job_started'; total: number }
   | { type: 'image_processed'; index: number; total: number; elapsed_ms: number }
@@ -116,6 +141,19 @@ export type ProgressMessage =
   | {
       type: 'completed'
       outputs: string[]
+      processed_count: number
+      failed_images: FailedImage[]
+      warnings: string[]
+      elapsed_ms: number
+      stage_timings: StageTiming[]
+    }
+  | {
+      type: 'preview_completed'
+      output_path: string
+      width: number
+      height: number
+      final_width: number
+      final_height: number
       processed_count: number
       failed_images: FailedImage[]
       warnings: string[]

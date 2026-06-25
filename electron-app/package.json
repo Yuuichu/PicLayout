@@ -1,10 +1,10 @@
 {
   "name": "piclayout",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "图片拼贴排版工具",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --remoteDebuggingPort 9222",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "electron:build": "npm run build && electron-builder --win",

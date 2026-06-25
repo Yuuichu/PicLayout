@@ -4,13 +4,19 @@ import type {
   BackgroundColor,
   FailedImage,
   ImageRotationDegrees,
+  PreviewResult,
   ProcessingMode,
   RenderingIntent,
+  PositionReference,
   StageTiming,
   TargetProfileMode,
   TextBlockConfig,
   WatermarkConfig,
 } from '../types/protocol'
+import {
+  isCanvasAspectPreset,
+  type CanvasAspectPreset,
+} from '../utils/aspectRatioPresets'
 
 // 用户设置（持久化到 localStorage）
 const SETTINGS_KEY = 'piclayout_settings'
@@ -21,16 +27,19 @@ interface ImageSize {
   height: number
 }
 
-interface Settings {
+export interface Settings {
   maxImages: number
-  resampleSize: number
-  borderSize: number
-  tileBorderPx: number
-  gapXPx: number
-  gapYPx: number
+  contentLongEdgePercent: number
+  tileBorderPercent: number
+  imageGapPercent: number
+  gapXPercent: number
+  gapYPercent: number
   outerBorderMode: 'auto' | 'custom'
-  outerBorderPx: number
+  outerBorderPercent: number
   finalSize: number
+  canvasAspectPreset: CanvasAspectPreset
+  customAspectWidth: number
+  customAspectHeight: number
   dpi: number
   backgroundColor: BackgroundColor
   prefix: string
@@ -50,10 +59,46 @@ interface Settings {
 }
 
 type AppTheme = 'dark' | 'light'
+type RenderedPreviewSource = 'precise' | 'output'
 
 interface UiState {
   theme: AppTheme
   filmstripCollapsed: boolean
+}
+
+interface RenderedPreviewState extends PreviewResult {
+  signature: string
+  source: RenderedPreviewSource | null
+  rendering: boolean
+  errorMessage: string
+}
+
+function emptyRenderedPreview(): RenderedPreviewState {
+  return {
+    data_url: '',
+    width: 0,
+    height: 0,
+    final_width: 0,
+    final_height: 0,
+    processed_count: 0,
+    failed_images: [],
+    warnings: [],
+    elapsed_ms: 0,
+    stage_timings: [],
+    signature: '',
+    source: null,
+    rendering: false,
+    errorMessage: '',
+  }
+}
+
+interface LegacyLayoutSettings {
+  resampleSize?: number
+  borderSize?: number
+  tileBorderPx?: number
+  gapXPx?: number
+  gapYPx?: number
+  outerBorderPx?: number
 }
 
 function loadSettings(): Settings {
@@ -68,8 +113,10 @@ function loadSettings(): Settings {
         watermark: { ...defaults.watermark, ...parsed.watermark },
         textBlock: { ...defaults.textBlock, ...parsed.textBlock },
       }
+      normalizeOverlayPositionSettings(settings, parsed)
       normalizeQualitySettings(settings, parsed)
       normalizeLayoutSettings(settings, parsed)
+      normalizeAspectSettings(settings, parsed)
       return settings
     }
   } catch {}
@@ -93,7 +140,10 @@ function loadUiState(): UiState {
   }
 }
 
-function normalizeQualitySettings(settings: Settings, parsed: Partial<Settings> & { processingMode?: string }) {
+function normalizeQualitySettings(
+  settings: Settings,
+  parsed: Omit<Partial<Settings>, 'processingMode'> & { processingMode?: string }
+) {
   const storedMode = parsed.processingMode
   if (!storedMode) {
     settings.processingMode = 'standard_high_quality'
@@ -123,14 +173,17 @@ function normalizeQualitySettings(settings: Settings, parsed: Partial<Settings> 
 function defaultSettings(): Settings {
   return {
     maxImages: 40,
-    resampleSize: 4000,
-    borderSize: 4200,
-    tileBorderPx: 100,
-    gapXPx: 0,
-    gapYPx: 0,
+    contentLongEdgePercent: 40,
+    tileBorderPercent: 1,
+    imageGapPercent: 0,
+    gapXPercent: 0,
+    gapYPercent: 0,
     outerBorderMode: 'auto',
-    outerBorderPx: 1000,
+    outerBorderPercent: 10,
     finalSize: 10000,
+    canvasAspectPreset: 'auto',
+    customAspectWidth: 3,
+    customAspectHeight: 4,
     dpi: 300,
     backgroundColor: 'white',
     prefix: 'output',
@@ -147,6 +200,7 @@ function defaultSettings(): Settings {
     watermark: {
       path: '',
       scale_percent: 100,
+      position_reference: 'content',
       position_x_percent: 50,
       position_y_percent: 95,
     },
@@ -163,23 +217,159 @@ function defaultSettings(): Settings {
       text_rgba: [255, 255, 255, 255],
       background_rgba: [0, 0, 0, 0],
       padding_px: 0,
+      position_reference: 'content',
       position_x_percent: 50,
       position_y_percent: 92,
     },
   }
 }
 
-function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings>) {
-  if (parsed.tileBorderPx === undefined) {
-    const resampleSize = Number(parsed.resampleSize ?? settings.resampleSize)
-    const borderSize = Number(parsed.borderSize ?? settings.borderSize)
-    settings.tileBorderPx = Math.max(0, Math.round((borderSize - resampleSize) / 2))
+function normalizeOverlayPositionSettings(settings: Settings, parsed: Partial<Settings>) {
+  settings.watermark.position_reference = normalizeStoredPositionReference(
+    parsed.watermark?.position_reference
+  )
+  settings.textBlock.position_reference = normalizeStoredPositionReference(
+    parsed.textBlock?.position_reference
+  )
+  sanitizeOverlayPositions(settings)
+}
+
+function normalizeStoredPositionReference(value: unknown): PositionReference {
+  return value === 'content' ? 'content' : 'canvas'
+}
+
+function sanitizeOverlayPositions(settings: Settings) {
+  settings.watermark.position_reference = normalizePositionReference(
+    settings.watermark.position_reference
+  )
+  settings.textBlock.position_reference = normalizePositionReference(
+    settings.textBlock.position_reference
+  )
+  settings.watermark.position_x_percent = normalizePositionPercent(
+    settings.watermark.position_x_percent,
+    50
+  )
+  settings.watermark.position_y_percent = normalizePositionPercent(
+    settings.watermark.position_y_percent,
+    95
+  )
+  settings.textBlock.position_x_percent = normalizePositionPercent(
+    settings.textBlock.position_x_percent,
+    50
+  )
+  settings.textBlock.position_y_percent = normalizePositionPercent(
+    settings.textBlock.position_y_percent,
+    92
+  )
+}
+
+function normalizePositionReference(value: unknown): PositionReference {
+  return value === 'canvas' ? 'canvas' : 'content'
+}
+
+function normalizePositionPercent(value: unknown, fallback: number): number {
+  const normalized = normalizeNumber(value, fallback)
+  return Math.round(normalized * 100) / 100
+}
+
+function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings> & LegacyLayoutSettings) {
+  const finalSize = normalizeNumber(settings.finalSize, 10000)
+  settings.finalSize = Math.min(30000, Math.max(1000, Math.round(finalSize)))
+
+  if (parsed.contentLongEdgePercent === undefined) {
+    settings.contentLongEdgePercent = percentFromPx(
+      normalizeNumber(parsed.resampleSize, 4000),
+      settings.finalSize
+    )
   }
-  settings.borderSize = settings.resampleSize + settings.tileBorderPx * 2
-  settings.gapXPx = Math.max(0, settings.gapXPx || 0)
-  settings.gapYPx = Math.max(0, settings.gapYPx || 0)
+
+  if (parsed.tileBorderPercent === undefined) {
+    const resampleSize = normalizeNumber(parsed.resampleSize, 4000)
+    const borderSize = normalizeNumber(parsed.borderSize, resampleSize + 200)
+    const legacyTileBorderPx =
+      parsed.tileBorderPx === undefined
+        ? Math.max(0, (borderSize - resampleSize) / 2)
+        : normalizeNumber(parsed.tileBorderPx, 100)
+    settings.tileBorderPercent = percentFromPx(legacyTileBorderPx, settings.finalSize)
+  }
+
+  if (parsed.gapXPercent === undefined) {
+    settings.gapXPercent = percentFromPx(normalizeNumber(parsed.gapXPx, 0), settings.finalSize)
+  }
+  if (parsed.gapYPercent === undefined) {
+    settings.gapYPercent = percentFromPx(normalizeNumber(parsed.gapYPx, 0), settings.finalSize)
+  }
+  if (parsed.imageGapPercent === undefined) {
+    settings.imageGapPercent = Math.max(settings.gapXPercent, settings.gapYPercent)
+  }
+  if (
+    parsed.tileBorderPercent === undefined &&
+    parsed.tileBorderPx === undefined &&
+    settings.tileBorderPercent <= 0
+  ) {
+    settings.tileBorderPercent = roundPercent(settings.imageGapPercent / 2)
+  }
+  if (parsed.outerBorderPercent === undefined) {
+    settings.outerBorderPercent = percentFromPx(
+      normalizeNumber(parsed.outerBorderPx, 1000),
+      settings.finalSize
+    )
+  }
+
   settings.outerBorderMode = settings.outerBorderMode === 'custom' ? 'custom' : 'auto'
-  settings.outerBorderPx = Math.max(0, settings.outerBorderPx || 0)
+  sanitizeLayoutSettings(settings)
+  dropLegacyLayoutSettings(settings as Settings & LegacyLayoutSettings)
+}
+
+function normalizeAspectSettings(settings: Settings, parsed: Partial<Settings>) {
+  settings.canvasAspectPreset = isCanvasAspectPreset(parsed.canvasAspectPreset)
+    ? parsed.canvasAspectPreset
+    : 'auto'
+  settings.customAspectWidth = clampNumber(settings.customAspectWidth, 0.1, 100, 3)
+  settings.customAspectHeight = clampNumber(settings.customAspectHeight, 0.1, 100, 4)
+}
+
+function sanitizeLayoutSettings(settings: Settings) {
+  settings.contentLongEdgePercent = clampPercent(settings.contentLongEdgePercent, 0.01, 100, 40)
+  settings.tileBorderPercent = clampPercent(settings.tileBorderPercent, 0, 50, 1)
+  settings.imageGapPercent = 0
+  settings.gapXPercent = 0
+  settings.gapYPercent = 0
+  settings.outerBorderPercent = clampPercent(settings.outerBorderPercent, 0, 49.99, 10)
+  settings.finalSize = Math.min(30000, Math.max(1000, Math.round(normalizeNumber(settings.finalSize, 10000))))
+  normalizeAspectSettings(settings, settings)
+}
+
+function percentFromPx(px: number, finalSize: number): number {
+  return roundPercent((Math.max(0, px) / Math.max(1, finalSize)) * 100)
+}
+
+function roundPercent(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function clampPercent(value: number, min: number, max: number, fallback: number): number {
+  const normalized = normalizeNumber(value, fallback)
+  return roundPercent(Math.min(max, Math.max(min, normalized)))
+}
+
+function clampNumber(value: number, min: number, max: number, fallback: number): number {
+  const normalized = normalizeNumber(value, fallback)
+  return Math.round(Math.min(max, Math.max(min, normalized)) * 100) / 100
+}
+
+function normalizeNumber(value: unknown, fallback: number): number {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : fallback
+}
+
+function dropLegacyLayoutSettings(settings: Settings & LegacyLayoutSettings) {
+  delete settings.resampleSize
+  delete settings.borderSize
+  delete settings.tileBorderPx
+  delete settings.gapXPx
+  delete settings.gapYPx
+  delete settings.outerBorderPx
 }
 
 export const useAppStore = defineStore('app', () => {
@@ -188,7 +378,8 @@ export const useAppStore = defineStore('app', () => {
   const ui = reactive<UiState>(loadUiState())
 
   function saveSettings() {
-    settings.borderSize = settings.resampleSize + settings.tileBorderPx * 2
+    sanitizeLayoutSettings(settings)
+    sanitizeOverlayPositions(settings)
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   }
 
@@ -348,6 +539,7 @@ export const useAppStore = defineStore('app', () => {
   const cancelledMessage = ref('')
   const partialOutputs = ref<string[]>([])
   const errorMessage = ref('')
+  const renderedPreview = reactive<RenderedPreviewState>(emptyRenderedPreview())
 
   function resetProgress() {
     progress.value = 0
@@ -377,6 +569,32 @@ export const useAppStore = defineStore('app', () => {
     const next = stageTimings.value.filter((item) => item.stage !== timing.stage)
     next.push(timing)
     stageTimings.value = next
+  }
+
+  function setRenderedPreview(result: PreviewResult, signature: string, source: RenderedPreviewSource) {
+    Object.assign(renderedPreview, {
+      ...result,
+      signature,
+      source,
+      rendering: false,
+      errorMessage: '',
+    })
+  }
+
+  function clearRenderedPreview() {
+    Object.assign(renderedPreview, emptyRenderedPreview())
+  }
+
+  function setRenderedPreviewRendering(rendering: boolean) {
+    renderedPreview.rendering = rendering
+    if (rendering) {
+      renderedPreview.errorMessage = ''
+    }
+  }
+
+  function setRenderedPreviewError(message: string) {
+    renderedPreview.rendering = false
+    renderedPreview.errorMessage = message
   }
 
   return {
@@ -414,9 +632,14 @@ export const useAppStore = defineStore('app', () => {
     cancelledMessage,
     partialOutputs,
     errorMessage,
+    renderedPreview,
     resetProgress,
     setProgress,
     setElapsed,
     setStageTiming,
+    setRenderedPreview,
+    clearRenderedPreview,
+    setRenderedPreviewRendering,
+    setRenderedPreviewError,
   }
 })

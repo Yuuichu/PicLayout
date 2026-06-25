@@ -3,20 +3,27 @@ use std::path::Path;
 use image::{imageops, DynamicImage, ImageBuffer, Rgba};
 
 use crate::{
-    config::CollageConfig, error::AppError, image_loader::open_image,
-    image_proc::resize_high_quality, jpeg_output::save_user_jpeg,
+    config::{percent_to_px, CollageConfig},
+    error::AppError,
+    image_loader::open_image,
+    image_proc::resize_high_quality,
+    jpeg_output::save_user_jpeg,
 };
 
-/// 根据列数动态计算外边框大小（与 Python 原版算法完全一致）
-pub fn calculate_dynamic_border(grid_cols: u32) -> u32 {
+/// 根据列数动态计算外边距百分比。
+pub fn calculate_dynamic_border_percent(grid_cols: u32) -> f32 {
     if grid_cols >= 10 {
-        200
+        2.0
     } else if grid_cols <= 2 {
-        1000
+        10.0
     } else {
-        // 线性插值：cols=10 → 200px，cols=2 → 1000px
-        200 + (1000 - 200) * (10 - grid_cols) / 8
+        // 线性插值：cols=10 -> 2%，cols=2 -> 10%
+        2.0 + (10.0 - 2.0) * (10 - grid_cols) as f32 / 8.0
     }
+}
+
+pub fn calculate_dynamic_border(grid_cols: u32, final_size: u32) -> u32 {
+    percent_to_px(final_size, calculate_dynamic_border_percent(grid_cols)).unwrap_or(0)
 }
 
 /// 添加最终外边框并缩放整体，使加边框后的长边 = max_size
@@ -73,17 +80,23 @@ mod tests {
 
     #[test]
     fn dynamic_border_boundary_values() {
-        assert_eq!(calculate_dynamic_border(10), 200);
-        assert_eq!(calculate_dynamic_border(15), 200);
-        assert_eq!(calculate_dynamic_border(2), 1000);
-        assert_eq!(calculate_dynamic_border(1), 1000);
+        assert_eq!(calculate_dynamic_border_percent(10), 2.0);
+        assert_eq!(calculate_dynamic_border_percent(15), 2.0);
+        assert_eq!(calculate_dynamic_border_percent(2), 10.0);
+        assert_eq!(calculate_dynamic_border_percent(1), 10.0);
+
+        assert_eq!(calculate_dynamic_border(10, 10_000), 200);
+        assert_eq!(calculate_dynamic_border(2, 10_000), 1000);
     }
 
     #[test]
     fn dynamic_border_interpolation() {
-        // cols=6 → 200 + 800*(10-6)/8 = 200 + 400 = 600
-        assert_eq!(calculate_dynamic_border(6), 600);
-        // cols=9 → 200 + 800*1/8 = 300
-        assert_eq!(calculate_dynamic_border(9), 300);
+        // cols=6 -> 2 + 8*(10-6)/8 = 6%
+        assert_eq!(calculate_dynamic_border_percent(6), 6.0);
+        // cols=9 -> 2 + 8*1/8 = 3%
+        assert_eq!(calculate_dynamic_border_percent(9), 3.0);
+
+        assert_eq!(calculate_dynamic_border(6, 20_000), 1200);
+        assert_eq!(calculate_dynamic_border(9, 20_000), 600);
     }
 }

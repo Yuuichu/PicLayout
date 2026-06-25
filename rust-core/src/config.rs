@@ -24,8 +24,12 @@ pub struct CollageConfig {
     pub gap_y_px: u32,
     #[serde(default)]
     pub outer_border_px: Option<u32>,
+    #[serde(default, flatten)]
+    pub layout_percent: LayoutPercentConfig,
     #[serde(default = "default_final_size")]
     pub final_size: u32,
+    #[serde(default)]
+    pub target_aspect_ratio: Option<AspectRatioConfig>,
     #[serde(default = "default_dpi")]
     pub dpi: u32,
     #[serde(default)]
@@ -56,12 +60,70 @@ impl CollageConfig {
     }
 
     pub fn tile_size(&self) -> Option<u32> {
-        match self.tile_border_px {
-            Some(border) => border
+        self.resolved_layout().map(|layout| layout.tile_size_px)
+    }
+
+    pub fn resolved_layout(&self) -> Option<ResolvedLayout> {
+        let content_long_edge_px = self.resolved_content_long_edge_px()?;
+        let tile_size_px = self.resolved_tile_size_px(content_long_edge_px)?;
+        let gap_x_px = self.resolved_gap_x_px()?;
+        let gap_y_px = self.resolved_gap_y_px()?;
+
+        Some(ResolvedLayout {
+            content_long_edge_px,
+            tile_size_px,
+            gap_x_px,
+            gap_y_px,
+        })
+    }
+
+    pub fn explicit_outer_border_px(&self) -> Option<u32> {
+        self.layout_percent
+            .outer_border_percent
+            .and_then(|percent| percent_to_px(self.final_size, percent))
+            .or(self.outer_border_px)
+    }
+
+    pub fn target_canvas_dimensions(&self) -> Option<(u32, u32)> {
+        self.target_aspect_ratio
+            .and_then(|ratio| ratio.canvas_dimensions(self.final_size))
+    }
+
+    fn resolved_content_long_edge_px(&self) -> Option<u32> {
+        self.layout_percent
+            .content_long_edge_percent
+            .and_then(|percent| percent_to_px(self.final_size, percent))
+            .or(Some(self.resample_size))
+    }
+
+    fn resolved_tile_size_px(&self, content_long_edge_px: u32) -> Option<u32> {
+        if let Some(percent) = self.layout_percent.tile_border_percent {
+            let border_px = percent_to_px(self.final_size, percent)?;
+            return border_px
                 .checked_mul(2)
-                .and_then(|padding| self.resample_size.checked_add(padding)),
+                .and_then(|padding| content_long_edge_px.checked_add(padding));
+        }
+
+        match self.tile_border_px {
+            Some(border_px) => border_px
+                .checked_mul(2)
+                .and_then(|padding| content_long_edge_px.checked_add(padding)),
             None => Some(self.border_size),
         }
+    }
+
+    fn resolved_gap_x_px(&self) -> Option<u32> {
+        self.layout_percent
+            .gap_x_percent
+            .and_then(|percent| percent_to_px(self.final_size, percent))
+            .or(Some(self.gap_x_px))
+    }
+
+    fn resolved_gap_y_px(&self) -> Option<u32> {
+        self.layout_percent
+            .gap_y_percent
+            .and_then(|percent| percent_to_px(self.final_size, percent))
+            .or(Some(self.gap_y_px))
     }
 
     pub fn has_text_block(&self) -> bool {
@@ -73,6 +135,75 @@ impl CollageConfig {
     pub fn has_overlay(&self) -> bool {
         self.watermark.is_some() || self.has_text_block()
     }
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy)]
+pub struct LayoutPercentConfig {
+    #[serde(default)]
+    pub content_long_edge_percent: Option<f32>,
+    #[serde(default)]
+    pub tile_border_percent: Option<f32>,
+    #[serde(default)]
+    pub gap_x_percent: Option<f32>,
+    #[serde(default)]
+    pub gap_y_percent: Option<f32>,
+    #[serde(default)]
+    pub outer_border_percent: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedLayout {
+    pub content_long_edge_px: u32,
+    pub tile_size_px: u32,
+    pub gap_x_px: u32,
+    pub gap_y_px: u32,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+pub struct AspectRatioConfig {
+    pub width: f32,
+    pub height: f32,
+}
+
+impl AspectRatioConfig {
+    pub fn normalized_ratio(self) -> Option<f64> {
+        if !self.width.is_finite() || !self.height.is_finite() {
+            return None;
+        }
+        if self.width <= 0.0 || self.height <= 0.0 {
+            return None;
+        }
+
+        Some(self.width as f64 / self.height as f64)
+    }
+
+    pub fn canvas_dimensions(self, final_size: u32) -> Option<(u32, u32)> {
+        let ratio = self.normalized_ratio()?;
+        if final_size == 0 {
+            return None;
+        }
+
+        if ratio >= 1.0 {
+            let height = (final_size as f64 / ratio).round();
+            return Some((final_size, height.max(1.0).min(u32::MAX as f64) as u32));
+        }
+
+        let width = (final_size as f64 * ratio).round();
+        Some((width.max(1.0).min(u32::MAX as f64) as u32, final_size))
+    }
+}
+
+pub fn percent_to_px(base_px: u32, percent: f32) -> Option<u32> {
+    if !percent.is_finite() || percent < 0.0 {
+        return None;
+    }
+
+    let value = base_px as f64 * percent as f64 / 100.0;
+    if value > u32::MAX as f64 {
+        return None;
+    }
+
+    Some(value.round() as u32)
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -131,6 +262,8 @@ pub struct WatermarkConfig {
     pub path: PathBuf,
     #[serde(default = "default_watermark_scale")]
     pub scale_percent: f32,
+    #[serde(default)]
+    pub position_reference: PositionReference,
     #[serde(default = "default_watermark_x")]
     pub position_x_percent: f32,
     #[serde(default = "default_watermark_y")]
@@ -160,10 +293,20 @@ pub struct TextBlockConfig {
     pub background_rgba: [u8; 4],
     #[serde(default)]
     pub padding_px: u32,
+    #[serde(default)]
+    pub position_reference: PositionReference,
     #[serde(default = "default_text_x")]
     pub position_x_percent: f32,
     #[serde(default = "default_text_y")]
     pub position_y_percent: f32,
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PositionReference {
+    #[default]
+    Canvas,
+    Content,
 }
 
 #[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
@@ -371,7 +514,10 @@ mod tests {
         }));
 
         assert_eq!(high_quality.processing_mode, ProcessingMode::MaximumQuality);
-        assert_eq!(standard.processing_mode, ProcessingMode::StandardHighQuality);
+        assert_eq!(
+            standard.processing_mode,
+            ProcessingMode::StandardHighQuality
+        );
         assert_eq!(fast.processing_mode, ProcessingMode::FastPreview);
     }
 
@@ -400,5 +546,132 @@ mod tests {
         }));
 
         assert_eq!(config.tile_size(), Some(4500));
+    }
+
+    #[test]
+    fn percent_layout_fields_resolve_against_final_size() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "final_size": 10000,
+            "content_long_edge_percent": 40,
+            "tile_border_percent": 1,
+            "gap_x_percent": 2.5,
+            "gap_y_percent": 3
+        }));
+
+        assert_eq!(
+            config.resolved_layout(),
+            Some(ResolvedLayout {
+                content_long_edge_px: 4000,
+                tile_size_px: 4200,
+                gap_x_px: 250,
+                gap_y_px: 300,
+            })
+        );
+    }
+
+    #[test]
+    fn outer_border_percent_overrides_legacy_px() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "final_size": 20000,
+            "outer_border_px": 100,
+            "outer_border_percent": 10
+        }));
+
+        assert_eq!(config.explicit_outer_border_px(), Some(2000));
+    }
+
+    #[test]
+    fn target_aspect_ratio_deserializes_and_uses_final_size_as_long_edge() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "final_size": 1000,
+            "target_aspect_ratio": {
+                "width": 3,
+                "height": 4
+            }
+        }));
+
+        assert_eq!(
+            config.target_aspect_ratio,
+            Some(AspectRatioConfig {
+                width: 3.0,
+                height: 4.0
+            })
+        );
+        assert_eq!(config.target_canvas_dimensions(), Some((750, 1000)));
+    }
+
+    #[test]
+    fn overlay_position_reference_defaults_to_canvas_for_legacy_protocol() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "watermark": {
+                "path": "watermark.png"
+            },
+            "text_block": {
+                "text": "caption"
+            }
+        }));
+
+        assert_eq!(
+            config.watermark.unwrap().position_reference,
+            PositionReference::Canvas
+        );
+        assert_eq!(
+            config.text_block.unwrap().position_reference,
+            PositionReference::Canvas
+        );
+    }
+
+    #[test]
+    fn overlay_position_reference_accepts_content_mode() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "watermark": {
+                "path": "watermark.png",
+                "position_reference": "content"
+            },
+            "text_block": {
+                "text": "caption",
+                "position_reference": "content"
+            }
+        }));
+
+        assert_eq!(
+            config.watermark.unwrap().position_reference,
+            PositionReference::Content
+        );
+        assert_eq!(
+            config.text_block.unwrap().position_reference,
+            PositionReference::Content
+        );
+    }
+
+    #[test]
+    fn landscape_target_aspect_ratio_uses_width_as_long_edge() {
+        let config = parse_config(json!({
+            "image_paths": [],
+            "output_dir": ".",
+            "prefix": "test",
+            "final_size": 1000,
+            "target_aspect_ratio": {
+                "width": 4,
+                "height": 3
+            }
+        }));
+
+        assert_eq!(config.target_canvas_dimensions(), Some((1000, 750)));
     }
 }

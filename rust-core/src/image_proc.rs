@@ -70,9 +70,10 @@ fn resize_srgb(img: DynamicImage, width: u32, height: u32) -> Result<DynamicImag
     );
 
     resize_into(&src, &mut dst)?;
-    let out = image::RgbaImage::from_raw(width, height, dst.buffer().to_vec()).ok_or_else(|| {
-        AppError::Processing("high quality resize produced invalid RGBA buffer".into())
-    })?;
+    let out =
+        image::RgbaImage::from_raw(width, height, dst.buffer().to_vec()).ok_or_else(|| {
+            AppError::Processing("high quality resize produced invalid RGBA buffer".into())
+        })?;
     Ok(DynamicImage::ImageRgba8(out))
 }
 

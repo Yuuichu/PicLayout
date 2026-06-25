@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CollageConfig, CollageResult, ProgressMessage } from '../main/rust-bridge'
+import type {
+  CollageConfig,
+  CollageResult,
+  PreviewImageResult,
+  PreviewResult,
+  ProgressMessage,
+} from '../main/rust-bridge'
 import type { FontFaceInfo } from '../main/font-metadata'
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -27,11 +33,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImageSize: (path: string): Promise<{ width: number; height: number } | null> =>
     ipcRenderer.invoke('image:size', path),
 
+  getImagePreviewDataUrl: (path: string, longEdge?: number): Promise<PreviewImageResult | null> =>
+    ipcRenderer.invoke('image:previewDataUrl', path, longEdge),
+
   listFonts: (): Promise<FontFaceInfo[]> =>
     ipcRenderer.invoke('fonts:list'),
 
   startCollage: (config: CollageConfig): Promise<CollageResult> =>
     ipcRenderer.invoke('collage:start', config),
+
+  renderPreview: (config: CollageConfig, longEdge?: number): Promise<PreviewResult> =>
+    ipcRenderer.invoke('preview:render', config, longEdge),
 
   cancelCollage: (): Promise<void> =>
     ipcRenderer.invoke('collage:cancel'),
@@ -52,8 +64,10 @@ export type ElectronAPI = {
   getThumbnail: (path: string) => Promise<string | null>
   getImageOrientation: (path: string) => Promise<number | null>
   getImageSize: (path: string) => Promise<{ width: number; height: number } | null>
+  getImagePreviewDataUrl: (path: string, longEdge?: number) => Promise<PreviewImageResult | null>
   listFonts: () => Promise<FontFaceInfo[]>
   startCollage: (config: CollageConfig) => Promise<CollageResult>
+  renderPreview: (config: CollageConfig, longEdge?: number) => Promise<PreviewResult>
   cancelCollage: () => Promise<void>
   onProgress: (callback: (msg: ProgressMessage) => void) => () => void
 }

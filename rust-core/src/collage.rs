@@ -5,8 +5,11 @@ use std::path::{Path, PathBuf};
 use image::{imageops, DynamicImage, GenericImageView, Rgba, RgbaImage};
 
 use crate::{
-    config::CollageConfig, error::AppError, image_loader::open_image,
-    jpeg_output::save_user_jpeg_view, progress,
+    config::{CollageConfig, PositionReference},
+    error::AppError,
+    image_loader::open_image,
+    jpeg_output::save_user_jpeg_view,
+    progress,
 };
 
 const MAX_JPEG_DIMENSION: u32 = u16::MAX as u32;
@@ -44,10 +47,13 @@ pub fn create_final_collage_image(
 pub struct FinalCollageLayout {
     pub grid_cols: u32,
     pub scale: f64,
-    pub outer_border: u32,
     pub tile_size: u32,
     pub gap_x: u32,
     pub gap_y: u32,
+    pub content_x: u32,
+    pub content_y: u32,
+    pub content_width: u32,
+    pub content_height: u32,
     pub canvas_width: u32,
     pub canvas_height: u32,
 }
@@ -57,6 +63,22 @@ pub struct TilePlacement {
     pub y: u32,
     pub width: u32,
     pub height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PositionReferenceArea {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl PositionReferenceArea {
+    pub fn center_at_percent(&self, x_percent: f32, y_percent: f32) -> (i64, i64) {
+        let x = self.x as f32 + self.width as f32 * x_percent / 100.0;
+        let y = self.y as f32 + self.height as f32 * y_percent / 100.0;
+        (x.round() as i64, y.round() as i64)
+    }
 }
 
 impl FinalCollageLayout {
@@ -69,11 +91,17 @@ impl FinalCollageLayout {
             return Err(AppError::NoImagesProcessed);
         }
         let (grid_cols, grid_rows) = grid_shape(tile_count);
-        let tile_size = config
-            .tile_size()
-            .ok_or_else(|| AppError::Processing("tile size calculation overflowed".into()))?;
-        let (collage_width, collage_height) =
-            grid_dimensions(grid_cols, grid_rows, tile_size, config.gap_x_px, config.gap_y_px)?;
+        let layout = config
+            .resolved_layout()
+            .ok_or_else(|| AppError::Processing("layout size calculation overflowed".into()))?;
+        let tile_size = layout.tile_size_px;
+        let (collage_width, collage_height) = grid_dimensions(
+            grid_cols,
+            grid_rows,
+            tile_size,
+            layout.gap_x_px,
+            layout.gap_y_px,
+        )?;
         if collage_width > MAX_JPEG_DIMENSION || collage_height > MAX_JPEG_DIMENSION {
             return Err(AppError::Processing(format!(
                 "collage dimensions {}x{} px exceed JPEG limit {} px",
@@ -81,29 +109,21 @@ impl FinalCollageLayout {
             )));
         }
 
-        let double_outer_border = outer_border
-            .checked_mul(2)
-            .ok_or_else(|| AppError::Processing("outer border calculation overflowed".into()))?;
-        let inner_size = config.final_size.saturating_sub(double_outer_border).max(1);
-        let scale = inner_size as f64 / collage_width.max(collage_height) as f64;
-        let scaled_width = (collage_width as f64 * scale).round().max(1.0) as u32;
-        let scaled_height = (collage_height as f64 * scale).round().max(1.0) as u32;
-        let canvas_width = scaled_width
-            .checked_add(double_outer_border)
-            .ok_or_else(|| AppError::Processing("final width calculation overflowed".into()))?;
-        let canvas_height = scaled_height
-            .checked_add(double_outer_border)
-            .ok_or_else(|| AppError::Processing("final height calculation overflowed".into()))?;
+        let geometry =
+            calculate_final_geometry(config, outer_border, collage_width, collage_height)?;
 
         Ok(Self {
             grid_cols,
-            scale,
-            outer_border,
+            scale: geometry.scale,
             tile_size,
-            gap_x: config.gap_x_px,
-            gap_y: config.gap_y_px,
-            canvas_width,
-            canvas_height,
+            gap_x: layout.gap_x_px,
+            gap_y: layout.gap_y_px,
+            content_x: geometry.content_x,
+            content_y: geometry.content_y,
+            content_width: geometry.content_width,
+            content_height: geometry.content_height,
+            canvas_width: geometry.canvas_width,
+            canvas_height: geometry.canvas_height,
         })
     }
 
@@ -115,10 +135,10 @@ impl FinalCollageLayout {
         let offset_x = self.tile_size.saturating_sub(image_width) / 2;
         let offset_y = self.tile_size.saturating_sub(image_height) / 2;
 
-        let x0 = scale_coord(tile_x + offset_x, self.scale) + self.outer_border;
-        let y0 = scale_coord(tile_y + offset_y, self.scale) + self.outer_border;
-        let x1 = scale_coord(tile_x + offset_x + image_width, self.scale) + self.outer_border;
-        let y1 = scale_coord(tile_y + offset_y + image_height, self.scale) + self.outer_border;
+        let x0 = scale_coord(tile_x + offset_x, self.scale) + self.content_x;
+        let y0 = scale_coord(tile_y + offset_y, self.scale) + self.content_y;
+        let x1 = scale_coord(tile_x + offset_x + image_width, self.scale) + self.content_x;
+        let y1 = scale_coord(tile_y + offset_y + image_height, self.scale) + self.content_y;
 
         TilePlacement {
             x: x0,
@@ -127,6 +147,109 @@ impl FinalCollageLayout {
             height: y1.saturating_sub(y0).max(1),
         }
     }
+
+    pub fn position_reference_area(&self, reference: PositionReference) -> PositionReferenceArea {
+        match reference {
+            PositionReference::Canvas => PositionReferenceArea {
+                x: 0,
+                y: 0,
+                width: self.canvas_width,
+                height: self.canvas_height,
+            },
+            PositionReference::Content => PositionReferenceArea {
+                x: self.content_x,
+                y: self.content_y,
+                width: self.content_width,
+                height: self.content_height,
+            },
+        }
+    }
+}
+
+struct FinalGeometry {
+    scale: f64,
+    content_x: u32,
+    content_y: u32,
+    content_width: u32,
+    content_height: u32,
+    canvas_width: u32,
+    canvas_height: u32,
+}
+
+fn calculate_final_geometry(
+    config: &CollageConfig,
+    outer_border: u32,
+    collage_width: u32,
+    collage_height: u32,
+) -> Result<FinalGeometry, AppError> {
+    let double_outer_border = outer_border
+        .checked_mul(2)
+        .ok_or_else(|| AppError::Processing("outer border calculation overflowed".into()))?;
+
+    if config.target_aspect_ratio.is_some() {
+        let (canvas_width, canvas_height) = config.target_canvas_dimensions().ok_or_else(|| {
+            AppError::Processing(
+                "target aspect ratio could not be converted to final dimensions".into(),
+            )
+        })?;
+        if canvas_width > MAX_JPEG_DIMENSION || canvas_height > MAX_JPEG_DIMENSION {
+            return Err(AppError::Processing(format!(
+                "final dimensions {}x{} px exceed JPEG limit {} px",
+                canvas_width, canvas_height, MAX_JPEG_DIMENSION
+            )));
+        }
+        if canvas_width <= double_outer_border || canvas_height <= double_outer_border {
+            return Err(AppError::Processing(format!(
+                "final dimensions {}x{} px are too small for {} px outer borders",
+                canvas_width, canvas_height, outer_border
+            )));
+        }
+
+        let available_width = canvas_width - double_outer_border;
+        let available_height = canvas_height - double_outer_border;
+        let scale = (available_width as f64 / collage_width.max(1) as f64)
+            .min(available_height as f64 / collage_height.max(1) as f64);
+        let scaled_width = scaled_extent(collage_width, scale, available_width);
+        let scaled_height = scaled_extent(collage_height, scale, available_height);
+        let content_x = outer_border + (available_width.saturating_sub(scaled_width) / 2);
+        let content_y = outer_border + (available_height.saturating_sub(scaled_height) / 2);
+
+        return Ok(FinalGeometry {
+            scale,
+            content_x,
+            content_y,
+            content_width: scaled_width,
+            content_height: scaled_height,
+            canvas_width,
+            canvas_height,
+        });
+    }
+
+    let inner_size = config.final_size.saturating_sub(double_outer_border).max(1);
+    let scale = inner_size as f64 / collage_width.max(collage_height).max(1) as f64;
+    let scaled_width = scaled_extent(collage_width, scale, u32::MAX);
+    let scaled_height = scaled_extent(collage_height, scale, u32::MAX);
+    let canvas_width = scaled_width
+        .checked_add(double_outer_border)
+        .ok_or_else(|| AppError::Processing("final width calculation overflowed".into()))?;
+    let canvas_height = scaled_height
+        .checked_add(double_outer_border)
+        .ok_or_else(|| AppError::Processing("final height calculation overflowed".into()))?;
+
+    Ok(FinalGeometry {
+        scale,
+        content_x: outer_border,
+        content_y: outer_border,
+        content_width: scaled_width,
+        content_height: scaled_height,
+        canvas_width,
+        canvas_height,
+    })
+}
+
+fn scaled_extent(value: u32, scale: f64, max_extent: u32) -> u32 {
+    let scaled = (value as f64 * scale).round().max(1.0) as u32;
+    scaled.min(max_extent.max(1))
 }
 
 pub fn grid_shape(tile_count: u32) -> (u32, u32) {
@@ -349,8 +472,8 @@ impl GenericImageView for CollageView<'_> {
 mod tests {
     use super::*;
     use crate::config::{
-        BackgroundColor, CollageConfig, ColorManagementConfig, OutputSettings, ProcessingMode,
-        RenderingIntent, TargetProfileMode,
+        AspectRatioConfig, BackgroundColor, CollageConfig, ColorManagementConfig, OutputSettings,
+        ProcessingMode, RenderingIntent, TargetProfileMode,
     };
     use std::fs;
 
@@ -390,7 +513,9 @@ mod tests {
             gap_x_px: 0,
             gap_y_px: 0,
             outer_border_px: None,
+            layout_percent: Default::default(),
             final_size: 10,
+            target_aspect_ratio: None,
             dpi: 300,
             background_color: BackgroundColor::White,
             watermark: None,
@@ -407,10 +532,13 @@ mod tests {
         let layout = FinalCollageLayout {
             grid_cols: 1,
             scale: 1.0,
-            outer_border: 0,
             tile_size: 10,
             gap_x: 0,
             gap_y: 0,
+            content_x: 0,
+            content_y: 0,
+            content_width: 10,
+            content_height: 10,
             canvas_width: 10,
             canvas_height: 10,
         };
@@ -443,7 +571,9 @@ mod tests {
             gap_x_px: 5,
             gap_y_px: 7,
             outer_border_px: Some(0),
+            layout_percent: Default::default(),
             final_size: 27,
+            target_aspect_ratio: None,
             dpi: 300,
             background_color: BackgroundColor::White,
             watermark: None,
@@ -468,5 +598,91 @@ mod tests {
         assert_eq!(first_row_second_col.y, 3);
         assert_eq!(second_row_first_col.x, 3);
         assert_eq!(second_row_first_col.y, 20);
+    }
+
+    #[test]
+    fn final_layout_centers_collage_inside_target_aspect_canvas() {
+        let config = CollageConfig {
+            image_paths: vec![],
+            image_rotations: Default::default(),
+            processing_mode: ProcessingMode::StandardHighQuality,
+            output_dir: std::path::PathBuf::new(),
+            prefix: "test".into(),
+            resample_size: 10,
+            border_size: 10,
+            tile_border_px: None,
+            gap_x_px: 0,
+            gap_y_px: 0,
+            outer_border_px: Some(0),
+            layout_percent: Default::default(),
+            final_size: 400,
+            target_aspect_ratio: Some(AspectRatioConfig {
+                width: 3.0,
+                height: 4.0,
+            }),
+            dpi: 300,
+            background_color: BackgroundColor::White,
+            watermark: None,
+            text_block: None,
+            overwrite: false,
+            output_settings: OutputSettings::default(),
+            color_management: ColorManagementConfig {
+                enabled: false,
+                target_profile: TargetProfileMode::Srgb,
+                target_profile_path: None,
+                rendering_intent: RenderingIntent::Perceptual,
+            },
+        };
+
+        let layout = FinalCollageLayout::new(2, &config, 0).unwrap();
+
+        assert_eq!(layout.canvas_width, 300);
+        assert_eq!(layout.canvas_height, 400);
+        assert_eq!(layout.content_x, 0);
+        assert_eq!(layout.content_y, 125);
+        assert_eq!(layout.content_width, 300);
+        assert_eq!(layout.content_height, 150);
+    }
+
+    #[test]
+    fn position_reference_area_selects_canvas_or_content_geometry() {
+        let layout = FinalCollageLayout {
+            grid_cols: 2,
+            scale: 1.0,
+            tile_size: 100,
+            gap_x: 0,
+            gap_y: 0,
+            content_x: 40,
+            content_y: 70,
+            content_width: 200,
+            content_height: 300,
+            canvas_width: 500,
+            canvas_height: 600,
+        };
+
+        assert_eq!(
+            layout.position_reference_area(PositionReference::Canvas),
+            PositionReferenceArea {
+                x: 0,
+                y: 0,
+                width: 500,
+                height: 600,
+            }
+        );
+        assert_eq!(
+            layout.position_reference_area(PositionReference::Content),
+            PositionReferenceArea {
+                x: 40,
+                y: 70,
+                width: 200,
+                height: 300,
+            }
+        );
+        assert_eq!(
+            layout
+                .position_reference_area(PositionReference::Content)
+                .center_at_percent(-20.0, 150.0),
+            (0, 520)
+        );
     }
 }
