@@ -90,7 +90,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('preview:render', async (_event, config: CollageConfig, longEdge = 1800) => {
     if (rustBridge.isRunning()) {
-      throw new Error('Another PicLayout task is already running')
+      throw new Error('Another Frameverse task is already running')
     }
 
     return rustBridge.renderPreview(config, longEdge)

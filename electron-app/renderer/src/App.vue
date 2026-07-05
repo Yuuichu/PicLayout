@@ -2,9 +2,9 @@
   <div class="app-shell" :data-theme="store.ui.theme">
     <header class="app-toolbar">
       <div class="brand-block">
-        <div class="brand-mark">PL</div>
+        <img class="brand-mark" :src="frameverseMark" alt="" draggable="false" />
         <div class="brand-copy">
-          <h1>PicLayout</h1>
+          <h1>Frameverse</h1>
           <span>{{ fileCountText }} · {{ statusLabel }}</span>
         </div>
       </div>
@@ -66,6 +66,7 @@ import {
   Sun,
 } from 'lucide-vue-next'
 import { useAppStore } from './stores/appStore'
+import frameverseMark from './assets/frameverse-mark.png'
 import type { CollageResult, PreviewResult, ProgressMessage } from './types/protocol'
 import {
   buildCollageConfig,
@@ -344,16 +345,16 @@ function formatCollageError(err: unknown): string {
 }
 
 .brand-mark {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  color: var(--color-text);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  width: 32px;
+  height: 32px;
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+  user-select: none;
+}
+
+.app-shell[data-theme='dark'] .brand-mark {
+  filter: invert(1);
 }
 
 .brand-copy {

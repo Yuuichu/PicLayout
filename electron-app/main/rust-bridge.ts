@@ -336,7 +336,7 @@ export class RustBridge {
 
   async renderPreview(config: CollageConfig, previewLongEdge = 1800): Promise<PreviewResult> {
     if (this.process) {
-      throw new Error('Another PicLayout task is already running')
+      throw new Error('Another Frameverse task is already running')
     }
 
     const tempDir = mkdtempSync(join(tmpdir(), 'piclayout-preview-'))
