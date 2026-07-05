@@ -1,20 +1,23 @@
 appId: com.yuui.piclayout
-productName: PicLayout
-copyright: © Yuui's PicLayoutTool
+productName: Frameverse
+artifactName: Frameverse Setup ${version}.${ext}
+copyright: © Yuui's Frameverse
 
 directories:
   output: ../dist-electron
   buildResources: build
 
-# 将编译好的 Rust 可执行文件捆绑进安装包
 extraResources:
   - from: ../rust-core/target/release/rust-core.exe
     to: rust-core.exe
+  - from: build/icon.png
+    to: icon.png
 
 files:
   - out/**/*
 
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: x64
@@ -22,4 +25,6 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  shortcutName: PicLayout
+  shortcutName: Frameverse
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico

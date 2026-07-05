@@ -17,12 +17,16 @@ function getInitialWindowSize(): { width: number; height: number } {
 
 function createWindow(): void {
   const initialSize = getInitialWindowSize()
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../build/icon.png')
   const win = new BrowserWindow({
     width: initialSize.width,
     height: initialSize.height,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
-    title: 'PicLayout',
+    title: 'Frameverse',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),
       contextIsolation: true,

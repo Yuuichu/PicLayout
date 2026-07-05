@@ -1,10 +1,14 @@
-# PicLayout
+<p align="center">
+  <img src="electron-app/build/icon.png" alt="Frameverse Logo" width="112" />
+</p>
 
-PicLayout 是一款面向摄影师和内容创作者的 Windows 拼图排版工具。它可以将多张照片自动排列为网格拼图，添加留白、外边框、Logo 和文本，并按 Instagram、小红书等平台的封面比例导出高分辨率 JPEG。
+<h1 align="center">Frameverse</h1>
+
+Frameverse 是一款面向摄影师和内容创作者的 Windows 拼图排版工具。它可以将多张照片自动排列为网格拼图，添加留白、外边框、Logo 和文本，并按 Instagram、小红书等平台的封面比例导出高分辨率 JPEG。
 
 [下载最新版 Windows 安装包](https://github.com/Yuuichu/PicLayout/releases/latest)
 
-![PicLayout v1.1.0 运行界面](docs/images/piclayout-v1.1.0.png)
+![Frameverse 运行界面](docs/images/frameverse-v1.1.1.png)
 
 ## 主要功能
 
@@ -77,7 +81,7 @@ PicLayout 是一款面向摄影师和内容创作者的 Windows 拼图排版工�
 ### 安装
 
 1. 打开 [Releases](https://github.com/Yuuichu/PicLayout/releases/latest)。
-2. 下载 `PicLayout.Setup.1.1.0.exe`。
+2. 下载最新的 `Frameverse Setup <version>.exe`。
 3. 运行安装程序并选择安装目录。
 
 当前安装包面向 Windows x64。安装包未进行商业代码签名，Windows SmartScreen 可能显示安全提示。
