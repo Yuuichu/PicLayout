@@ -149,13 +149,19 @@ export type ProgressMessage =
   | { type: 'cancelled'; message: string; partial_outputs: string[] }
   | { type: 'error'; message: string }
 
+function getRustCoreExecutableName(): string {
+  return process.platform === 'win32' ? 'rust-core.exe' : 'rust-core'
+}
+
 export function getRustCorePath(): string {
+  const executableName = getRustCoreExecutableName()
+
   if (app.isPackaged) {
-    return join(process.resourcesPath, 'rust-core.exe')
+    return join(process.resourcesPath, executableName)
   }
 
-  const releaseExe = join(__dirname, '../../../rust-core/target/release/rust-core.exe')
-  const debugExe = join(__dirname, '../../../rust-core/target/debug/rust-core.exe')
+  const releaseExe = join(__dirname, '../../../rust-core/target/release', executableName)
+  const debugExe = join(__dirname, '../../../rust-core/target/debug', executableName)
 
   if (process.env.PICLAYOUT_RUST_PROFILE === 'debug' && existsSync(debugExe)) {
     return debugExe
