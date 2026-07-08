@@ -18,6 +18,7 @@ export interface CollageConfig {
   overwrite?: boolean
   output_settings: OutputSettings
   color_management: ColorManagementConfig
+  hdr_output?: boolean
 }
 
 export type ImageRotationDegrees = 0 | 90 | 180 | 270

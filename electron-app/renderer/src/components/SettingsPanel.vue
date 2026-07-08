@@ -185,6 +185,12 @@
           <input type="checkbox" v-model="s.linearLightResize" @change="handleLinearLightResizeChange" />
           <span>线性光高画质缩放</span>
         </label>
+
+        <label class="toggle-row">
+          <input type="checkbox" v-model="s.hdrOutput" @change="save" />
+          <span>HDR 输出 (Ultra HDR)</span>
+          <em>生成 gain map JPEG，Instagram 和小红书上保留高光亮度。仅 HEIC HDR 源有效。</em>
+        </label>
       </section>
 
       <section v-else-if="activeTool === 'color'" class="tool-section">

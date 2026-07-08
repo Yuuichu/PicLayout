@@ -4,7 +4,7 @@
 
 <h1 align="center">Frameverse</h1>
 
-Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排版工具。它可以将多张照片自动排列为网格拼图，添加留白、外边框、Logo 和文本，并按 Instagram、小红书等平台的封面比例导出高分辨率 JPEG。
+Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排版工具。它可以将多张照片自动排列为网格拼图，添加留白、外边框、Logo 和文本，并按 Instagram、小红书等平台的封面比例导出高分辨率 JPEG。支持 JPEG、PNG、BMP、TIFF、HEIC/HEIF 等常见图片格式输入。
 
 [下载最新版 Windows 安装包](https://github.com/Yuuichu/PicLayout/releases/latest)
 
@@ -40,7 +40,7 @@ Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排
 
 ### Logo / Watermark
 
-- 支持透明 PNG 等常见图片格式。
+- 支持透明 PNG、HEIC/HEIF 等常见图片格式。
 - 可调整缩放比例和 X/Y 坐标。
 - 保留滑条与数字输入，也可以直接在 Viewer 中拖拽。
 - 定位参照可独立选择：

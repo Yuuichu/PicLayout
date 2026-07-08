@@ -47,6 +47,7 @@ cargo run --release -- --render-preview preview.png 1800
 ```
 
 Rust release profile (`Cargo.toml`): `opt-level=3`, `lto=true`, `codegen-units=1`, `strip=true`。
+首次构建时 `heif-rs`（HEIC 解码）会下载预编译的 libheif 静态库，需互联网连接。
 
 ## 架构说明
 
@@ -88,7 +89,7 @@ NDJSON 消息类型：
 | 模块 | 职责 |
 |------|------|
 | `config.rs` | `CollageConfig` 反序列化与验证、`BackgroundColor`/`ProcessingMode`/`PositionReference` 等枚举、百分比→像素换算 |
-| `image_loader.rs` | 图片解码（TurboJPEG for JPEG、image crate for 其他格式）、2GB 内存安全限制、EXIF/ICC 提取 |
+| `image_loader.rs` | 图片解码（TurboJPEG for JPEG、heif-rs for HEIC/HEIF、image crate for 其他格式）、2GB 内存安全限制、EXIF/ICC 提取 |
 | `color.rs` | lcms2 色彩管理：ICC profile 加载、源→目标色彩空间转换、sRGB/自定义 profile 支持、渲染意图 |
 | `metadata.rs` | EXIF 方向读取、ICC profile 提取（JPEG/PNG）、`kamadak-exif` 解析 |
 | `image_proc.rs` | `fit_long_edge`（保持比例缩放）、Lanczos3 高质量/线性光 resize、手动旋转 |
@@ -200,6 +201,7 @@ Electron `font-metadata.ts` 通过 `spawn(rustCorePath, ['--list-fonts'])` 获�
 ### 内存安全
 
 - 单张图片解码：最大 2GB RGBA 分配
+- HEIC 文件解码：最大 256MB 输入文件限制
 - 整个 pipeline RGBA 工作集：硬限制 4GB（超过拒绝处理），2GB 时发出警告并自动降低线程并发数
 - 高分辨率（内容长边 ≥3500px）或 >20 张图片时，Rayon 线程池限制为 ≤4 线程
 

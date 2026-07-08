@@ -48,6 +48,7 @@ export interface CollageConfig {
     position_y_percent?: number
   } | null
   text_block?: TextBlockConfig | null
+  hdr_output?: boolean
 }
 
 export type TextFontStyle = 'normal' | 'italic' | 'oblique'

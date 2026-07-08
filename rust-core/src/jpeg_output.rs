@@ -153,6 +153,7 @@ mod tests {
                 target_profile_path: None,
                 rendering_intent: RenderingIntent::Perceptual,
             },
+            hdr_output: false,
         }
     }
 

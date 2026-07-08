@@ -307,10 +307,11 @@ pub fn render_final_image(
                     let decode_started = Instant::now();
                     let loaded = load_image(img_path)?;
                     let missing_icc = loaded.icc_profile.is_none();
+                    let mut image_warnings = loaded.warnings;
                     processing_metrics.add_decode(decode_started.elapsed().as_millis());
 
                     let color_orient_started = Instant::now();
-                    let (prepared, image_warnings) = color::prepare_image_with_metadata(
+                    let (prepared, color_warnings) = color::prepare_image_with_metadata(
                         img_path,
                         loaded.image,
                         loaded.orientation,
@@ -318,6 +319,7 @@ pub fn render_final_image(
                         config,
                         &target_profile,
                     )?;
+                    image_warnings.extend(color_warnings);
                     let rotated =
                         apply_manual_rotation(prepared, config.image_rotation_degrees(img_path));
                     processing_metrics.add_color_orient(color_orient_started.elapsed().as_millis());
@@ -966,6 +968,7 @@ mod tests {
                 target_profile_path: None,
                 rendering_intent: RenderingIntent::Perceptual,
             },
+            hdr_output: false,
         }
     }
 
