@@ -18,3 +18,5 @@ Thumbs.db
 
 # Temp
 *.tmp
+node_modules/
+package-lock.json
