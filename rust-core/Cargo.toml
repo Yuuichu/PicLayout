@@ -14,7 +14,6 @@ fast_image_resize = { version = "6.0.0", features = ["image", "rayon"] }
 turbojpeg = { version = "1.4.0", features = ["image"] }
 heif-rs = "26.7"
 ultrahdr-rs = "0.3"
-ultrahdr-core = "0.5"
 
 # 色彩管理与元数据
 lcms2 = "6.1"

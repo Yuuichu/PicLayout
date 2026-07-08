@@ -16,7 +16,7 @@ use crate::{
     error::AppError,
     image_loader::{ensure_rgba_allocation_safe, load_image},
     image_proc::{apply_manual_rotation, fit_long_edge, resize_high_quality_with_options},
-    jpeg_output::save_user_jpeg,
+    jpeg_output::save_user_jpeg_or_ultrahdr,
     progress::{self, FailedImage, ProgressMessage, Stage, StageTiming, StageTimingDetail},
     text_block::add_text_block_to_image,
     watermark::add_watermark_to_image,
@@ -50,6 +50,7 @@ pub struct RenderedImageReport {
     pub warnings: Vec<String>,
     pub elapsed_ms: u128,
     pub stage_timings: Vec<StageTiming>,
+    pub gain_maps: Vec<crate::ultrahdr_output::GainMapData>,
 }
 
 #[derive(Debug)]
@@ -70,6 +71,7 @@ struct ProcessedImage {
     tile: ProcessedTile,
     warnings: Vec<String>,
     missing_icc: bool,
+    gain_map: Option<crate::ultrahdr_output::GainMapData>,
 }
 
 #[derive(Default)]
@@ -175,17 +177,18 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         message: "Saving JPEG output...".into(),
         elapsed_ms: rendered.elapsed_ms,
     });
+    let _use_hdr = config.hdr_output && rendered.gain_maps.len() == 1;
     if config.has_overlay() {
         let wm_path = config
             .output_dir
             .join(format!("{}_collage_final_watermarked.jpg", config.prefix));
-        save_user_jpeg(&rendered.image, &wm_path, config, output_icc)?;
+        save_user_jpeg_or_ultrahdr(&rendered.image, &wm_path, config, output_icc, rendered.gain_maps.first())?;
         outputs.push(wm_path);
     } else {
         let final_path = config
             .output_dir
             .join(format!("{}_collage_final.jpg", config.prefix));
-        save_user_jpeg(&rendered.image, &final_path, config, output_icc)?;
+        save_user_jpeg_or_ultrahdr(&rendered.image, &final_path, config, output_icc, rendered.gain_maps.first())?;
         outputs.push(final_path);
     }
 
@@ -348,6 +351,7 @@ pub fn render_final_image(
                         },
                         warnings: image_warnings,
                         missing_icc,
+                        gain_map: loaded.gain_map,
                     })
                 })();
 
@@ -370,11 +374,15 @@ pub fn render_final_image(
     let mut bordered_images: Vec<ProcessedTile> = Vec::new();
     let mut failed_images: Vec<FailedImage> = Vec::new();
     let mut missing_icc_count = 0usize;
+    let mut gain_maps: Vec<crate::ultrahdr_output::GainMapData> = Vec::new();
     for result in results {
         match result {
             Ok(processed) => {
                 if processed.missing_icc {
                     missing_icc_count += 1;
+                }
+                if let Some(gm) = processed.gain_map {
+                    gain_maps.push(gm);
                 }
                 bordered_images.push(processed.tile);
                 warnings.extend(processed.warnings);
@@ -456,6 +464,7 @@ pub fn render_final_image(
         warnings,
         elapsed_ms: timer.total_elapsed_ms(),
         stage_timings: timer.stage_timings,
+        gain_maps,
     })
 }
 
