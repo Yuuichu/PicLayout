@@ -28,42 +28,117 @@
 
           <label class="compact-field">
             <span>内容长边 (%)</span>
-            <input :value="layoutSliderValue('contentLongEdgePercent')" data-layout-field="content-long-edge" class="range-input" type="range" min="0" max="100" step="1" @input="setLayoutPercentFromSlider($event, 'contentLongEdgePercent')" @change="save" />
-            <input v-model.number="s.contentLongEdgePercent" data-layout-field="content-long-edge" type="number" min="0.01" max="100" step="0.01" @change="handleLayoutNumberChange('contentLongEdgePercent')" />
+            <input
+              :value="layoutSliderValue('contentLongEdgePercent')"
+              data-layout-field="content-long-edge"
+              class="range-input"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              @input="setLayoutPercentFromSlider($event, 'contentLongEdgePercent')"
+              @change="save"
+            />
+            <input
+              v-model.number="s.contentLongEdgePercent"
+              data-layout-field="content-long-edge"
+              type="number"
+              min="0.01"
+              max="100"
+              step="0.01"
+              @change="handleLayoutNumberChange('contentLongEdgePercent')"
+            />
           </label>
 
           <label class="compact-field">
             <span>单图边框 (%)</span>
-            <input :value="layoutSliderValue('tileBorderPercent')" data-layout-field="tile-padding" class="range-input" type="range" min="0" max="100" step="1" @input="setLayoutPercentFromSlider($event, 'tileBorderPercent')" @change="save" />
-            <input v-model.number="s.tileBorderPercent" data-layout-field="tile-padding" type="number" min="0" max="50" step="0.01" @change="handleLayoutNumberChange('tileBorderPercent')" />
+            <input
+              :value="layoutSliderValue('tileBorderPercent')"
+              data-layout-field="tile-padding"
+              class="range-input"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              @input="setLayoutPercentFromSlider($event, 'tileBorderPercent')"
+              @change="save"
+            />
+            <input
+              v-model.number="s.tileBorderPercent"
+              data-layout-field="tile-padding"
+              type="number"
+              min="0"
+              max="50"
+              step="0.01"
+              @change="handleLayoutNumberChange('tileBorderPercent')"
+            />
           </label>
 
           <label class="compact-field">
             <span>横向间隔 (%)</span>
-            <input :value="layoutSliderValue('imageGapPercent')" data-layout-field="image-gap" class="range-input" type="range" min="0" max="100" step="1" @input="setLayoutPercentFromSlider($event, 'imageGapPercent')" @change="save" />
-            <input v-model.number="s.imageGapPercent" data-layout-field="image-gap" type="number" min="0" max="100" step="0.01" @change="handleLayoutNumberChange('imageGapPercent')" />
+            <input
+              :value="layoutSliderValue('imageGapPercent')"
+              data-layout-field="image-gap"
+              class="range-input"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              @input="setLayoutPercentFromSlider($event, 'imageGapPercent')"
+              @change="save"
+            />
+            <input
+              v-model.number="s.imageGapPercent"
+              data-layout-field="image-gap"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              @change="handleLayoutNumberChange('imageGapPercent')"
+            />
           </label>
 
           <label class="compact-field">
             <span>纵向间隔 (%)</span>
-            <input :value="layoutSliderValue('gapYPercent')" data-layout-field="legacy-gap-y" class="range-input" type="range" min="0" max="100" step="1" @input="setLayoutPercentFromSlider($event, 'gapYPercent')" @change="save" />
-            <input v-model.number="s.gapYPercent" data-layout-field="legacy-gap-y" type="number" min="0" max="100" step="0.01" @change="handleLayoutNumberChange('gapYPercent')" />
+            <input
+              :value="layoutSliderValue('gapYPercent')"
+              data-layout-field="legacy-gap-y"
+              class="range-input"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              @input="setLayoutPercentFromSlider($event, 'gapYPercent')"
+              @change="save"
+            />
+            <input
+              v-model.number="s.gapYPercent"
+              data-layout-field="legacy-gap-y"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              @change="handleLayoutNumberChange('gapYPercent')"
+            />
           </label>
 
           <label class="compact-field">
             <span>最终长边 (px)</span>
-            <input v-model.number="s.finalSize" data-layout-field="final-size" type="number" min="1000" max="30000" @change="save" />
+            <input
+              v-model.number="s.finalSize"
+              data-layout-field="final-size"
+              type="number"
+              min="1000"
+              max="30000"
+              @change="save"
+            />
           </label>
         </div>
 
         <div class="stacked-field">
           <span>画布比例</span>
           <select v-model="s.canvasAspectPreset" @change="handleCanvasAspectChange">
-            <option
-              v-for="option in canvasAspectOptions"
-              :key="option.value"
-              :value="option.value"
-            >
+            <option v-for="option in canvasAspectOptions" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
           </select>
@@ -97,10 +172,18 @@
         <div class="stacked-field canvas-margin-field">
           <span>最终外边距 (%)</span>
           <div class="segmented-control">
-            <button type="button" :class="{ active: s.outerBorderMode === 'auto' }" @click="setOuterBorderMode('auto')">
+            <button
+              type="button"
+              :class="{ active: s.outerBorderMode === 'auto' }"
+              @click="setOuterBorderMode('auto')"
+            >
               自动
             </button>
-            <button type="button" :class="{ active: s.outerBorderMode === 'custom' }" @click="setOuterBorderMode('custom')">
+            <button
+              type="button"
+              :class="{ active: s.outerBorderMode === 'custom' }"
+              @click="setOuterBorderMode('custom')"
+            >
               自定义
             </button>
           </div>
@@ -126,7 +209,9 @@
           </template>
         </div>
 
-        <p class="setting-note">高分辨率和大量图片会增加内存占用；如果处理失败，优先降低图片数量或最终尺寸。</p>
+        <p class="setting-note">
+          高分辨率和大量图片会增加内存占用；如果处理失败，优先降低图片数量或最终尺寸。
+        </p>
       </section>
 
       <section v-else-if="activeTool === 'output'" class="tool-section">
@@ -182,7 +267,11 @@
         </label>
 
         <label class="toggle-row">
-          <input type="checkbox" v-model="s.linearLightResize" @change="handleLinearLightResizeChange" />
+          <input
+            type="checkbox"
+            v-model="s.linearLightResize"
+            @change="handleLinearLightResizeChange"
+          />
           <span>线性光高画质缩放</span>
         </label>
       </section>
@@ -263,7 +352,11 @@
 import { computed, ref } from 'vue'
 import { Activity, Droplets, FileOutput, LayoutGrid, Palette, Type } from 'lucide-vue-next'
 import { useAppStore } from '../stores/appStore'
-import { BACKGROUND_COLOR_OPTIONS, type BackgroundColor, type ProcessingMode } from '../types/protocol'
+import {
+  BACKGROUND_COLOR_OPTIONS,
+  type BackgroundColor,
+  type ProcessingMode,
+} from '@shared/protocol'
 import {
   CANVAS_ASPECT_OPTIONS,
   findCanvasAspectOption,
@@ -298,7 +391,10 @@ const s = store.settings
 const colorOptions = BACKGROUND_COLOR_OPTIONS
 const canvasAspectOptions = CANVAS_ASPECT_OPTIONS
 const activeTool = ref<ToolId>('layout')
-const layoutPercentRanges: Record<LayoutPercentKey, { min: number; max: number; curve?: LayoutSliderCurve }> = {
+const layoutPercentRanges: Record<
+  LayoutPercentKey,
+  { min: number; max: number; curve?: LayoutSliderCurve }
+> = {
   contentLongEdgePercent: { min: 0.01, max: 100 },
   tileBorderPercent: { min: 0, max: 50, curve: 'quadratic' },
   imageGapPercent: { min: 0, max: 100 },
@@ -316,20 +412,24 @@ const currentCanvasAspectHelp = computed(() => {
   }
 
   const option = findCanvasAspectOption(s.canvasAspectPreset)
-  return option.ratio ? `${option.shortLabel} ${formatAspectRatio(option.ratio)}` : 'Auto keeps the collage shape'
+  return option.ratio
+    ? `${option.shortLabel} ${formatAspectRatio(option.ratio)}`
+    : 'Auto keeps the collage shape'
 })
 
-const overlayGeometry = computed(() => computePreviewLayout({
-  imageCount: store.selectedFiles.length,
-  finalSize: s.finalSize,
-  targetAspectRatio: resolveCanvasAspectRatio(s),
-  contentLongEdgePercent: s.contentLongEdgePercent,
-  tileBorderPercent: s.tileBorderPercent,
-  gapXPercent: s.gapXPercent,
-  gapYPercent: s.gapYPercent,
-  outerBorderMode: s.outerBorderMode,
-  outerBorderPercent: s.outerBorderPercent,
-}))
+const overlayGeometry = computed(() =>
+  computePreviewLayout({
+    imageCount: store.selectedFiles.length,
+    finalSize: s.finalSize,
+    targetAspectRatio: resolveCanvasAspectRatio(s),
+    contentLongEdgePercent: s.contentLongEdgePercent,
+    tileBorderPercent: s.tileBorderPercent,
+    gapXPercent: s.gapXPercent,
+    gapYPercent: s.gapYPercent,
+    outerBorderMode: s.outerBorderMode,
+    outerBorderPercent: s.outerBorderPercent,
+  })
+)
 
 const iccBasename = computed(() => {
   if (!s.targetProfilePath) return ''
@@ -388,7 +488,9 @@ function layoutSliderValue(key: LayoutPercentKey) {
 function setLayoutPercentFromSlider(event: Event, key: LayoutPercentKey) {
   const input = event.target as HTMLInputElement
   const sliderPosition = Number(input.value)
-  const sliderRatio = Number.isFinite(sliderPosition) ? Math.min(100, Math.max(0, sliderPosition)) / 100 : 0
+  const sliderRatio = Number.isFinite(sliderPosition)
+    ? Math.min(100, Math.max(0, sliderPosition)) / 100
+    : 0
   const valueRatio = valueRatioFromSliderRatio(key, sliderRatio)
   const { min, max } = layoutPercentRanges[key]
   s[key] = roundLayoutPercent(min + (max - min) * valueRatio)
@@ -491,43 +593,43 @@ async function selectIccProfile() {
   gap: 10px;
 }
 
-.field-grid > .compact-field:has([data-layout-field="content-long-edge"]),
-.field-grid > .compact-field:has([data-layout-field="image-gap"]),
-.field-grid > .compact-field:has([data-layout-field="legacy-gap-y"]) {
+.field-grid > .compact-field:has([data-layout-field='content-long-edge']),
+.field-grid > .compact-field:has([data-layout-field='image-gap']),
+.field-grid > .compact-field:has([data-layout-field='legacy-gap-y']) {
   display: none;
 }
 
-.field-grid > .compact-field:has([data-layout-field="final-size"]) {
+.field-grid > .compact-field:has([data-layout-field='final-size']) {
   order: 2;
 }
 
-.field-grid > .compact-field:has([data-layout-field="tile-padding"]) {
+.field-grid > .compact-field:has([data-layout-field='tile-padding']) {
   order: 3;
 }
 
-.field-grid > .compact-field:has([data-layout-field="image-gap"]) {
+.field-grid > .compact-field:has([data-layout-field='image-gap']) {
   order: 4;
 }
 
-.field-grid > .compact-field:has([data-layout-field="tile-padding"]) > span,
-.field-grid > .compact-field:has([data-layout-field="image-gap"]) > span,
+.field-grid > .compact-field:has([data-layout-field='tile-padding']) > span,
+.field-grid > .compact-field:has([data-layout-field='image-gap']) > span,
 .canvas-margin-field > span {
   font-size: 0;
 }
 
-.field-grid > .compact-field:has([data-layout-field="tile-padding"]) > span::after,
-.field-grid > .compact-field:has([data-layout-field="image-gap"]) > span::after,
+.field-grid > .compact-field:has([data-layout-field='tile-padding']) > span::after,
+.field-grid > .compact-field:has([data-layout-field='image-gap']) > span::after,
 .canvas-margin-field > span::after {
   color: var(--color-text-muted);
   font-size: 11px;
   font-weight: 700;
 }
 
-.field-grid > .compact-field:has([data-layout-field="tile-padding"]) > span::after {
+.field-grid > .compact-field:has([data-layout-field='tile-padding']) > span::after {
   content: '图片留白/间距 (%)';
 }
 
-.field-grid > .compact-field:has([data-layout-field="image-gap"]) > span::after {
+.field-grid > .compact-field:has([data-layout-field='image-gap']) > span::after {
   content: '图片间隔 (%)';
 }
 

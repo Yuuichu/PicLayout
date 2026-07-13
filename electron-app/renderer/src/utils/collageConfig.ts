@@ -1,5 +1,5 @@
 import type { Settings } from '../stores/appStore'
-import type { CollageConfig, ImageRotationDegrees } from '../types/protocol'
+import type { CollageConfig, ImageRotationDegrees } from '@shared/protocol'
 import { resolveCanvasAspectRatio } from './aspectRatioPresets'
 
 export function buildCollageConfig(
@@ -39,9 +39,7 @@ export function buildCollageConfig(
       rendering_intent: settings.renderingIntent,
     },
     watermark:
-      settings.watermarkEnabled && settings.watermark.path
-        ? { ...settings.watermark }
-        : null,
+      settings.watermarkEnabled && settings.watermark.path ? { ...settings.watermark } : null,
     text_block:
       settings.textBlockEnabled && settings.textBlock.text.trim()
         ? { ...settings.textBlock }

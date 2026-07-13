@@ -1,0 +1,6 @@
+node_modules/
+out/
+package-lock.json
+../dist/
+../dist-electron/
+../rust-core/target/

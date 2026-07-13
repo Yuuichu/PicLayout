@@ -55,7 +55,14 @@
 
         <div class="form-row compact-row">
           <label>字重</label>
-          <input v-model.number="s.textBlock.font_weight" type="number" min="1" max="999" class="number-input" @change="save" />
+          <input
+            v-model.number="s.textBlock.font_weight"
+            type="number"
+            min="1"
+            max="999"
+            class="number-input"
+            @change="save"
+          />
           <span class="hint">400 常规，700 粗体</span>
         </div>
 
@@ -70,13 +77,27 @@
 
         <div class="form-row compact-row">
           <label>字号</label>
-          <input v-model.number="s.textBlock.font_size_px" type="number" min="1" max="2000" class="number-input" @change="save" />
+          <input
+            v-model.number="s.textBlock.font_size_px"
+            type="number"
+            min="1"
+            max="2000"
+            class="number-input"
+            @change="save"
+          />
           <span class="hint">px</span>
         </div>
 
         <div class="form-row compact-row">
           <label>行高</label>
-          <input v-model.number="s.textBlock.line_height_px" type="number" min="1" max="3000" class="number-input" @change="save" />
+          <input
+            v-model.number="s.textBlock.line_height_px"
+            type="number"
+            min="1"
+            max="3000"
+            class="number-input"
+            @change="save"
+          />
           <span class="hint">px</span>
         </div>
 
@@ -91,39 +112,102 @@
 
         <div class="form-row compact-row">
           <label>最大宽度</label>
-          <input v-model.number="s.textBlock.max_width_percent" type="number" min="1" max="100" step="0.01" class="number-input" @change="save" />
+          <input
+            v-model.number="s.textBlock.max_width_percent"
+            type="number"
+            min="1"
+            max="100"
+            step="0.01"
+            class="number-input"
+            @change="save"
+          />
           <span class="hint">%</span>
         </div>
 
         <div class="form-row compact-row">
           <label>内边距</label>
-          <input v-model.number="s.textBlock.padding_px" type="number" min="0" max="5000" class="number-input" @change="save" />
+          <input
+            v-model.number="s.textBlock.padding_px"
+            type="number"
+            min="0"
+            max="5000"
+            class="number-input"
+            @change="save"
+          />
           <span class="hint">px</span>
         </div>
 
         <div class="form-row compact-row">
           <label>文字颜色</label>
           <input type="color" :value="rgbaToHex(s.textBlock.text_rgba)" @input="setTextColor" />
-          <input v-model.number="s.textBlock.text_rgba[3]" type="number" min="0" max="255" class="alpha-input" @change="save" />
+          <input
+            v-model.number="s.textBlock.text_rgba[3]"
+            type="number"
+            min="0"
+            max="255"
+            class="alpha-input"
+            @change="save"
+          />
         </div>
 
         <div class="form-row compact-row">
           <label>背景颜色</label>
-          <input type="color" :value="rgbaToHex(s.textBlock.background_rgba)" @input="setBackgroundColor" />
-          <input v-model.number="s.textBlock.background_rgba[3]" type="number" min="0" max="255" class="alpha-input" @change="save" />
+          <input
+            type="color"
+            :value="rgbaToHex(s.textBlock.background_rgba)"
+            @input="setBackgroundColor"
+          />
+          <input
+            v-model.number="s.textBlock.background_rgba[3]"
+            type="number"
+            min="0"
+            max="255"
+            class="alpha-input"
+            @change="save"
+          />
         </div>
 
         <div class="form-row compact-row">
           <label>水平位置</label>
-          <input :key="`text-x-${s.textBlock.position_reference}-${positionBounds.minX}-${positionBounds.maxX}`" v-model.number="s.textBlock.position_x_percent" type="range" :min="positionBounds.minX" :max="positionBounds.maxX" step="0.01" class="range-input" @input="save" />
-          <input v-model.number="s.textBlock.position_x_percent" type="number" step="0.01" class="number-input" @change="save" />
+          <input
+            :key="`text-x-${s.textBlock.position_reference}-${positionBounds.minX}-${positionBounds.maxX}`"
+            v-model.number="s.textBlock.position_x_percent"
+            type="range"
+            :min="positionBounds.minX"
+            :max="positionBounds.maxX"
+            step="0.01"
+            class="range-input"
+            @input="save"
+          />
+          <input
+            v-model.number="s.textBlock.position_x_percent"
+            type="number"
+            step="0.01"
+            class="number-input"
+            @change="save"
+          />
           <span class="hint">%</span>
         </div>
 
         <div class="form-row compact-row">
           <label>垂直位置</label>
-          <input :key="`text-y-${s.textBlock.position_reference}-${positionBounds.minY}-${positionBounds.maxY}`" v-model.number="s.textBlock.position_y_percent" type="range" :min="positionBounds.minY" :max="positionBounds.maxY" step="0.01" class="range-input" @input="save" />
-          <input v-model.number="s.textBlock.position_y_percent" type="number" step="0.01" class="number-input" @change="save" />
+          <input
+            :key="`text-y-${s.textBlock.position_reference}-${positionBounds.minY}-${positionBounds.maxY}`"
+            v-model.number="s.textBlock.position_y_percent"
+            type="range"
+            :min="positionBounds.minY"
+            :max="positionBounds.maxY"
+            step="0.01"
+            class="range-input"
+            @input="save"
+          />
+          <input
+            v-model.number="s.textBlock.position_y_percent"
+            type="number"
+            step="0.01"
+            class="number-input"
+            @change="save"
+          />
           <span class="hint">%</span>
         </div>
       </div>
@@ -134,7 +218,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useAppStore } from '../stores/appStore'
-import type { FontFaceInfo, PositionReference } from '../types/protocol'
+import type { FontFaceInfo, PositionReference } from '@shared/protocol'
 import {
   convertOverlayPositionReference,
   overlaySizeScale,
@@ -170,32 +254,22 @@ const positionBounds = computed(() =>
 function setPositionReference(reference: PositionReference) {
   const currentReference = s.textBlock.position_reference
   if (reference === currentReference) return
-  const converted = convertOverlayPositionReference(
-    props.geometry,
-    currentReference,
-    reference,
-    {
-      x: s.textBlock.position_x_percent,
-      y: s.textBlock.position_y_percent,
-    }
-  )
+  const converted = convertOverlayPositionReference(props.geometry, currentReference, reference, {
+    x: s.textBlock.position_x_percent,
+    y: s.textBlock.position_y_percent,
+  })
   const fromScale = overlaySizeScale(props.geometry, currentReference, s.finalSize)
   const toScale = overlaySizeScale(props.geometry, reference, s.finalSize)
   const fromWidth = overlayWidthReference(props.geometry, currentReference)
   const toWidth = overlayWidthReference(props.geometry, reference)
   s.textBlock.position_reference = reference
-  s.textBlock.font_size_px = roundOverlayPercent(
-    s.textBlock.font_size_px * fromScale / toScale
-  )
+  s.textBlock.font_size_px = roundOverlayPercent((s.textBlock.font_size_px * fromScale) / toScale)
   s.textBlock.line_height_px = roundOverlayPercent(
-    s.textBlock.line_height_px * fromScale / toScale
+    (s.textBlock.line_height_px * fromScale) / toScale
   )
-  s.textBlock.padding_px = Math.max(
-    0,
-    Math.round(s.textBlock.padding_px * fromScale / toScale)
-  )
+  s.textBlock.padding_px = Math.max(0, Math.round((s.textBlock.padding_px * fromScale) / toScale))
   s.textBlock.max_width_percent = roundOverlayPercent(
-    Math.min(100, Math.max(1, s.textBlock.max_width_percent * fromWidth / toWidth))
+    Math.min(100, Math.max(1, (s.textBlock.max_width_percent * fromWidth) / toWidth))
   )
   s.textBlock.position_x_percent = roundOverlayPercent(converted.x)
   s.textBlock.position_y_percent = roundOverlayPercent(converted.y)

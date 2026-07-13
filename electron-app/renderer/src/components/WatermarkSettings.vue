@@ -3,11 +3,7 @@
     <div class="watermark-header">
       <p class="section-title">水印设置</p>
       <label class="toggle-label">
-        <input
-          v-model="s.watermarkEnabled"
-          type="checkbox"
-          @change="save"
-        />
+        <input v-model="s.watermarkEnabled" type="checkbox" @change="save" />
         启用水印
       </label>
     </div>
@@ -36,7 +32,11 @@
 
         <div class="form-row compact-row">
           <label>水印图片</label>
-          <button class="btn-secondary watermark-btn" :disabled="store.processing" @click="selectWatermark">
+          <button
+            class="btn-secondary watermark-btn"
+            :disabled="store.processing"
+            @click="selectWatermark"
+          >
             选择图片
           </button>
           <span class="hint file-name" :title="s.watermark.path">
@@ -112,7 +112,9 @@
         </div>
       </div>
 
-      <p class="tip">水印会叠加在下方拼贴预览上；导出时会使用原始水印图片，建议使用带透明通道的 PNG。</p>
+      <p class="tip">
+        水印会叠加在下方拼贴预览上；导出时会使用原始水印图片，建议使用带透明通道的 PNG。
+      </p>
     </template>
   </div>
 </template>
@@ -120,7 +122,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
-import type { PositionReference } from '../types/protocol'
+import type { PositionReference } from '@shared/protocol'
 import {
   convertOverlayPositionReference,
   overlaySizeScale,
@@ -149,20 +151,15 @@ const positionBounds = computed(() =>
 function setPositionReference(reference: PositionReference) {
   const currentReference = s.watermark.position_reference
   if (reference === currentReference) return
-  const converted = convertOverlayPositionReference(
-    props.geometry,
-    currentReference,
-    reference,
-    {
-      x: s.watermark.position_x_percent,
-      y: s.watermark.position_y_percent,
-    }
-  )
+  const converted = convertOverlayPositionReference(props.geometry, currentReference, reference, {
+    x: s.watermark.position_x_percent,
+    y: s.watermark.position_y_percent,
+  })
   const fromScale = overlaySizeScale(props.geometry, currentReference, s.finalSize)
   const toScale = overlaySizeScale(props.geometry, reference, s.finalSize)
   s.watermark.position_reference = reference
   s.watermark.scale_percent = roundOverlayPercent(
-    Math.min(300, Math.max(10, s.watermark.scale_percent * fromScale / toScale))
+    Math.min(300, Math.max(10, (s.watermark.scale_percent * fromScale) / toScale))
   )
   s.watermark.position_x_percent = roundOverlayPercent(converted.x)
   s.watermark.position_y_percent = roundOverlayPercent(converted.y)

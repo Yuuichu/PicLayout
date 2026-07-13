@@ -1,13 +1,6 @@
-import { spawn } from 'child_process'
+import { execFile } from 'node:child_process'
 import { getRustCorePath } from './rust-bridge'
-
-export interface FontFaceInfo {
-  family: string
-  post_script_name: string
-  weight: number
-  style: 'normal' | 'italic' | 'oblique' | string
-  monospaced: boolean
-}
+import type { FontFaceInfo } from '../shared/protocol'
 
 let fontCache: FontFaceInfo[] | null = null
 let pendingFontLoad: Promise<FontFaceInfo[]> | null = null
@@ -17,35 +10,28 @@ export function listSystemFonts(): Promise<FontFaceInfo[]> {
   if (pendingFontLoad) return pendingFontLoad
 
   pendingFontLoad = new Promise((resolve, reject) => {
-    const child = spawn(getRustCorePath(), ['--list-fonts'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString()
-    })
-    child.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString()
-    })
-    child.on('error', (err) => {
-      pendingFontLoad = null
-      reject(new Error(`failed to start rust-core font scanner: ${err.message}`))
-    })
-    child.on('close', (code) => {
-      pendingFontLoad = null
-      if (code !== 0) {
-        reject(new Error(`font scanner exited with code ${code}: ${stderr.trim()}`))
-        return
+    execFile(
+      getRustCorePath(),
+      ['--list-fonts'],
+      { maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) => {
+        pendingFontLoad = null
+        if (error) {
+          reject(new Error(`系统字体扫描失败: ${error.message}`))
+          return
+        }
+        try {
+          fontCache = JSON.parse(stdout) as FontFaceInfo[]
+          resolve(fontCache)
+        } catch (parseError) {
+          reject(
+            new Error(
+              `无法解析系统字体列表: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+            )
+          )
+        }
       }
-      try {
-        fontCache = JSON.parse(stdout) as FontFaceInfo[]
-        resolve(fontCache)
-      } catch (err) {
-        reject(new Error(`failed to parse font list: ${err instanceof Error ? err.message : String(err)}`))
-      }
-    })
+    )
   })
 
   return pendingFontLoad

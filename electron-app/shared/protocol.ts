@@ -1,3 +1,57 @@
+export type ImageRotationDegrees = 0 | 90 | 180 | 270
+export type ProcessingMode = 'standard_high_quality' | 'maximum_quality' | 'fast_preview'
+export type PositionReference = 'canvas' | 'content'
+export type TextFontStyle = 'normal' | 'italic' | 'oblique'
+export type TextAlign = 'left' | 'center' | 'right'
+export type TargetProfileMode = 'srgb' | 'custom'
+export type RenderingIntent = 'perceptual' | 'relative_colorimetric'
+
+export type BackgroundColor =
+  'white' | 'black' | 'grey' | 'lightgrey' | 'beige' | 'lightblue' | 'lightyellow'
+
+export interface TargetAspectRatio {
+  width: number
+  height: number
+}
+
+export interface WatermarkConfig {
+  path: string
+  scale_percent: number
+  position_reference: PositionReference
+  position_x_percent: number
+  position_y_percent: number
+}
+
+export interface TextBlockConfig {
+  text: string
+  font_family: string
+  font_weight: number
+  font_style: TextFontStyle
+  font_size_px: number
+  line_height_px: number
+  max_width_percent: number
+  align: TextAlign
+  text_rgba: [number, number, number, number]
+  background_rgba: [number, number, number, number]
+  padding_px: number
+  position_reference: PositionReference
+  position_x_percent: number
+  position_y_percent: number
+}
+
+export interface OutputSettings {
+  jpeg_quality: number
+  auto_orient: boolean
+  linear_light_resize: boolean
+}
+
+export interface ColorManagementConfig {
+  enabled: boolean
+  target_profile: TargetProfileMode
+  target_profile_path?: string | null
+  rendering_intent: RenderingIntent
+}
+
 export interface CollageConfig {
   image_paths: string[]
   image_rotations: Record<string, ImageRotationDegrees>
@@ -18,71 +72,22 @@ export interface CollageConfig {
   overwrite?: boolean
   output_settings: OutputSettings
   color_management: ColorManagementConfig
-}
 
-export type ImageRotationDegrees = 0 | 90 | 180 | 270
-export type ProcessingMode = 'standard_high_quality' | 'maximum_quality' | 'fast_preview'
-
-export interface TargetAspectRatio {
-  width: number
-  height: number
-}
-
-export type PositionReference = 'canvas' | 'content'
-
-export type BackgroundColor =
-  | 'white' | 'black' | 'grey' | 'lightgrey' | 'beige' | 'lightblue' | 'lightyellow'
-
-export interface WatermarkConfig {
-  path: string
-  scale_percent: number
-  position_reference: PositionReference
-  position_x_percent: number
-  position_y_percent: number
-}
-
-export type TextFontStyle = 'normal' | 'italic' | 'oblique'
-export type TextAlign = 'left' | 'center' | 'right'
-
-export interface TextBlockConfig {
-  text: string
-  font_family: string
-  font_weight: number
-  font_style: TextFontStyle
-  font_size_px: number
-  line_height_px: number
-  max_width_percent: number
-  align: TextAlign
-  text_rgba: [number, number, number, number]
-  background_rgba: [number, number, number, number]
-  padding_px: number
-  position_reference: PositionReference
-  position_x_percent: number
-  position_y_percent: number
+  // Legacy pixel-based layout fields remain optional for protocol compatibility.
+  resample_size?: number
+  border_size?: number
+  tile_border_px?: number | null
+  gap_x_px?: number
+  gap_y_px?: number
+  outer_border_px?: number | null
 }
 
 export interface FontFaceInfo {
   family: string
   post_script_name: string
   weight: number
-  style: TextFontStyle | string
+  style: TextFontStyle
   monospaced: boolean
-}
-
-export interface OutputSettings {
-  jpeg_quality: number
-  auto_orient: boolean
-  linear_light_resize: boolean
-}
-
-export type TargetProfileMode = 'srgb' | 'custom'
-export type RenderingIntent = 'perceptual' | 'relative_colorimetric'
-
-export interface ColorManagementConfig {
-  enabled: boolean
-  target_profile: TargetProfileMode
-  target_profile_path?: string | null
-  rendering_intent: RenderingIntent
 }
 
 export interface FailedImage {
@@ -163,12 +168,16 @@ export type ProgressMessage =
   | { type: 'cancelled'; message: string; partial_outputs: string[] }
   | { type: 'error'; message: string }
 
-export const BACKGROUND_COLOR_OPTIONS: { value: BackgroundColor; label: string; hex: string }[] = [
-  { value: 'white',       label: '白色',   hex: '#ffffff' },
-  { value: 'black',       label: '黑色',   hex: '#000000' },
-  { value: 'grey',        label: '灰色',   hex: '#808080' },
-  { value: 'lightgrey',   label: '浅灰',   hex: '#d3d3d3' },
-  { value: 'beige',       label: '米色',   hex: '#f5f5dc' },
-  { value: 'lightblue',   label: '浅蓝',   hex: '#add8e6' },
-  { value: 'lightyellow', label: '浅黄',   hex: '#ffffe0' },
+export const BACKGROUND_COLOR_OPTIONS: ReadonlyArray<{
+  value: BackgroundColor
+  label: string
+  hex: string
+}> = [
+  { value: 'white', label: '白色', hex: '#ffffff' },
+  { value: 'black', label: '黑色', hex: '#000000' },
+  { value: 'grey', label: '灰色', hex: '#808080' },
+  { value: 'lightgrey', label: '浅灰', hex: '#d3d3d3' },
+  { value: 'beige', label: '米色', hex: '#f5f5dc' },
+  { value: 'lightblue', label: '浅蓝', hex: '#add8e6' },
+  { value: 'lightyellow', label: '浅黄', hex: '#ffffe0' },
 ]

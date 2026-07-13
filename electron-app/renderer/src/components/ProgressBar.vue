@@ -1,9 +1,5 @@
 <template>
-  <div
-    v-if="hasActivity"
-    class="progress-area"
-    :class="`variant-${variant}`"
-  >
+  <div v-if="hasActivity" class="progress-area" :class="`variant-${variant}`">
     <div v-if="store.processing" class="card progress-card">
       <div class="status-row">
         <div class="status-text">{{ store.statusMessage || '正在处理...' }}</div>
@@ -82,11 +78,14 @@
 import { computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
 
-const props = withDefaults(defineProps<{
-  variant?: 'panel'
-}>(), {
-  variant: 'panel',
-})
+const props = withDefaults(
+  defineProps<{
+    variant?: 'panel'
+  }>(),
+  {
+    variant: 'panel',
+  }
+)
 
 const store = useAppStore()
 
@@ -118,7 +117,11 @@ const visibleTimings = computed(() =>
 const variant = computed(() => props.variant)
 
 const hasActivity = computed(
-  () => store.processing || store.outputFiles.length > 0 || !!store.cancelledMessage || !!store.errorMessage
+  () =>
+    store.processing ||
+    store.outputFiles.length > 0 ||
+    !!store.cancelledMessage ||
+    !!store.errorMessage
 )
 
 function basename(path: string): string {
@@ -145,7 +148,6 @@ async function openOutputDir() {
   }
   store.errorMessage = ''
 }
-
 </script>
 
 <style scoped>

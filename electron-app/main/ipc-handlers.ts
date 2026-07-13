@@ -1,7 +1,8 @@
 import { BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { listSystemFonts } from './font-metadata'
 import { readExifOrientation, sizeWithExifOrientation } from './image-metadata'
-import { rustBridge, CollageConfig, PreviewImageResult, ProgressMessage } from './rust-bridge'
+import { rustBridge } from './rust-bridge'
+import type { CollageConfig, PreviewImageResult, ProgressMessage } from '../shared/protocol'
 
 export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('dialog:openImages', async () => {
@@ -90,7 +91,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('preview:render', async (_event, config: CollageConfig, longEdge = 1800) => {
     if (rustBridge.isRunning()) {
-      throw new Error('Another Frameverse task is already running')
+      throw new Error('已有 Frameverse 任务正在运行')
     }
 
     return rustBridge.renderPreview(config, longEdge)
