@@ -274,6 +274,15 @@
           />
           <span>线性光高画质缩放</span>
         </label>
+
+        <label class="toggle-row">
+          <input type="checkbox" v-model="s.hdrOutput" @change="save" />
+          <span>HDR 输出 (Ultra HDR)</span>
+          <em
+            >生成 gain map JPEG，在支持的显示端保留高光亮度。仅 HEIC HDR 源且未启用
+            Logo/文本时有效。</em
+          >
+        </label>
       </section>
 
       <section v-else-if="activeTool === 'color'" class="tool-section">

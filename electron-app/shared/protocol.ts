@@ -72,6 +72,7 @@ export interface CollageConfig {
   overwrite?: boolean
   output_settings: OutputSettings
   color_management: ColorManagementConfig
+  hdr_output: boolean
 
   // Legacy pixel-based layout fields remain optional for protocol compatibility.
   resample_size?: number

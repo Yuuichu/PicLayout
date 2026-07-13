@@ -38,6 +38,7 @@ export function buildCollageConfig(
           : null,
       rendering_intent: settings.renderingIntent,
     },
+    hdr_output: settings.hdrOutput,
     watermark:
       settings.watermarkEnabled && settings.watermark.path ? { ...settings.watermark } : null,
     text_block:

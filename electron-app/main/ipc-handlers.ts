@@ -8,7 +8,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('dialog:openImages', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择图片',
-      filters: [{ name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'tiff'] }],
+      filters: [
+        { name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'tiff', 'heic', 'heif'] },
+      ],
       properties: ['openFile', 'multiSelections'],
     })
     return result.canceled ? [] : result.filePaths
@@ -17,7 +19,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('dialog:openWatermark', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择水印图片',
-      filters: [{ name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'bmp'] }],
+      filters: [
+        { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'tiff', 'heic', 'heif'] },
+      ],
       properties: ['openFile'],
     })
     return result.canceled ? null : result.filePaths[0]

@@ -12,6 +12,7 @@ mod metadata;
 mod pipeline;
 mod progress;
 mod text_block;
+mod ultrahdr_output;
 mod watermark;
 
 use std::io::{self, BufRead};

@@ -49,6 +49,7 @@ export interface Settings {
   targetProfileMode: TargetProfileMode
   targetProfilePath: string
   renderingIntent: RenderingIntent
+  hdrOutput: boolean
   watermarkEnabled: boolean
   watermark: WatermarkConfig
   textBlockEnabled: boolean
@@ -193,6 +194,7 @@ function defaultSettings(): Settings {
     targetProfileMode: 'srgb',
     targetProfilePath: '',
     renderingIntent: 'perceptual',
+    hdrOutput: false,
     watermarkEnabled: false,
     watermark: {
       path: '',

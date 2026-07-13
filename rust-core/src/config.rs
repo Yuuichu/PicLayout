@@ -42,6 +42,8 @@ pub struct CollageConfig {
     pub output_settings: OutputSettings,
     #[serde(default)]
     pub color_management: ColorManagementConfig,
+    #[serde(default)]
+    pub hdr_output: bool,
 }
 
 impl CollageConfig {
