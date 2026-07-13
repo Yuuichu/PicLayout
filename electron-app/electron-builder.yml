@@ -26,6 +26,10 @@ mac:
   icon: build/icon.png
   category: public.app-category.photography
   minimumSystemVersion: '12.0'
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   binaries:
     - Contents/Resources/rust-core
   extraResources:

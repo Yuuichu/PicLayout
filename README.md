@@ -178,6 +178,8 @@ bash scripts/build.sh
 
 安装包输出到 `dist-electron/`。
 
+macOS 的签名、公证和发行验证步骤见 [macOS 打包说明](docs/macos-packaging.md)。
+
 ## 项目架构
 
 ```text
