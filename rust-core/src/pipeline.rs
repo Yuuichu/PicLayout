@@ -1087,6 +1087,41 @@ mod tests {
     }
 
     #[test]
+    fn gain_map_transform_and_composition_preserve_layout() {
+        let source = GrayImage::from_fn(2, 1, |x, _| Luma([64 + x as u8 * 128]));
+        let placement = TilePlacement {
+            x: 5,
+            y: 9,
+            width: 4,
+            height: 8,
+        };
+        let transformed =
+            transform_gain_map(Some(GainMapData::new(source)), Some(6), true, 0, &placement)
+                .unwrap();
+        assert_eq!(transformed.image.dimensions(), (1, 2));
+        assert_eq!((transformed.x, transformed.y), (1, 2));
+
+        let layout = FinalCollageLayout {
+            grid_cols: 1,
+            scale: 1.0,
+            tile_size: 8,
+            gap_x: 0,
+            gap_y: 0,
+            content_x: 0,
+            content_y: 0,
+            content_width: 16,
+            content_height: 12,
+            canvas_width: 16,
+            canvas_height: 12,
+        };
+        let composed = compose_gain_map(&layout, vec![transformed]).unwrap();
+
+        assert_eq!(composed.image.dimensions(), (4, 3));
+        assert_eq!(composed.image.get_pixel(0, 0)[0], NEUTRAL_GAIN_VALUE);
+        assert_ne!(composed.image.get_pixel(1, 2)[0], NEUTRAL_GAIN_VALUE);
+    }
+
+    #[test]
     fn run_creates_final_output_without_intermediate_files() {
         let dir = tempfile::tempdir().unwrap();
         let first = dir.path().join("first.jpg");

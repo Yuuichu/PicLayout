@@ -155,6 +155,8 @@ fn gain_map_metadata() -> GainMapMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{Rgb, RgbImage};
+    use ultrahdr_rs::Decoder;
 
     fn uniform_hdr_sdr_pair(width: u32, height: u32) -> (Vec<u8>, Vec<u8>) {
         let mut hdr = Vec::with_capacity(width as usize * height as usize * 6);
@@ -189,5 +191,28 @@ mod tests {
         let gain_map = compute_gainmap_from_pair(&hdr, &sdr, 1, 1).unwrap();
 
         assert_eq!(gain_map.image.get_pixel(0, 0)[0], NEUTRAL_GAIN_VALUE);
+    }
+
+    #[test]
+    fn assembled_output_round_trips_as_ultra_hdr() {
+        let base = RgbImage::from_pixel(9, 5, Rgb([96, 128, 160]));
+        let mut base_jpeg = Vec::new();
+        JpegEncoder::new_with_quality(&mut base_jpeg, 90)
+            .encode_image(&base)
+            .unwrap();
+        let gain_map = GainMapData::new(GrayImage::from_pixel(3, 2, Luma([192])));
+
+        let output = assemble_ultrahdr_jpeg(&base_jpeg, &gain_map).unwrap();
+        let decoder = Decoder::new(&output).unwrap();
+
+        assert!(decoder.is_ultrahdr());
+        assert!(decoder.metadata().is_some());
+        let decoded_base = image::load_from_memory(decoder.primary_jpeg().unwrap()).unwrap();
+        let decoded_gain_map = image::load_from_memory(decoder.gainmap_jpeg().unwrap()).unwrap();
+        assert_eq!((decoded_base.width(), decoded_base.height()), (9, 5));
+        assert_eq!(
+            (decoded_gain_map.width(), decoded_gain_map.height()),
+            (3, 2)
+        );
     }
 }
