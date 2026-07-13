@@ -7,7 +7,8 @@
     "lib": ["ES2022"],
     "strict": true,
     "skipLibCheck": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo",
     "types": ["electron-vite/node", "node"]
   },
-  "include": ["electron.vite.config.*", "main/**/*", "preload/**/*"]
+  "include": ["electron.vite.config.*", "main/**/*", "preload/**/*", "shared/**/*"]
 }

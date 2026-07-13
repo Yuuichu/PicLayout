@@ -1,4 +1,4 @@
-import type { TargetAspectRatio } from '../types/protocol'
+import type { TargetAspectRatio } from '@shared/protocol'
 
 export interface PreviewLayoutInput {
   imageCount: number
@@ -55,9 +55,10 @@ export function computePreviewLayout(input: PreviewLayoutInput): PreviewGeometry
   const gapY = Math.max(0, percentToPx(input.gapYPercent, finalSize))
   const gridWidth = spacedExtent(cols, tileSize, gapX)
   const gridHeight = spacedExtent(rows, tileSize, gapY)
-  const border = input.outerBorderMode === 'custom'
-    ? Math.max(0, percentToPx(input.outerBorderPercent, finalSize))
-    : percentToPx(calculateDynamicBorderPercent(cols), finalSize)
+  const border =
+    input.outerBorderMode === 'custom'
+      ? Math.max(0, percentToPx(input.outerBorderPercent, finalSize))
+      : percentToPx(calculateDynamicBorderPercent(cols), finalSize)
   const targetCanvas = resolveTargetCanvas(finalSize, input.targetAspectRatio)
   const doubleBorder = border * 2
   const availableWidth = Math.max(1, (targetCanvas?.width ?? finalSize) - doubleBorder)
@@ -67,10 +68,14 @@ export function computePreviewLayout(input: PreviewLayoutInput): PreviewGeometry
     : Math.min(availableWidth, availableHeight) / Math.max(gridWidth, gridHeight)
   const scaledWidth = Math.min(availableWidth, Math.max(1, Math.round(gridWidth * scale)))
   const scaledHeight = Math.min(availableHeight, Math.max(1, Math.round(gridHeight * scale)))
-  const contentX = border + Math.max(0, Math.round((availableWidth - scaledWidth) / 2))
-  const contentY = border + Math.max(0, Math.round((availableHeight - scaledHeight) / 2))
   const canvasWidth = targetCanvas?.width ?? scaledWidth + doubleBorder
   const canvasHeight = targetCanvas?.height ?? scaledHeight + doubleBorder
+  const contentX = targetCanvas
+    ? border + Math.max(0, Math.round((availableWidth - scaledWidth) / 2))
+    : border
+  const contentY = targetCanvas
+    ? border + Math.max(0, Math.round((availableHeight - scaledHeight) / 2))
+    : border
 
   return {
     cols,
@@ -150,7 +155,7 @@ export function gridShape(tileCount: number): { cols: number; rows: number } {
 export function calculateDynamicBorderPercent(cols: number): number {
   if (cols >= 10) return 2
   if (cols <= 2) return 10
-  return 2 + (10 - 2) * (10 - cols) / 8
+  return 2 + ((10 - 2) * (10 - cols)) / 8
 }
 
 export function percentToPx(percent: number, basePx: number): number {
@@ -204,12 +209,12 @@ function resolveTargetCanvas(
   if (width >= height) {
     return {
       width: finalSize,
-      height: Math.max(1, Math.round(finalSize * height / width)),
+      height: Math.max(1, Math.round((finalSize * height) / width)),
     }
   }
 
   return {
-    width: Math.max(1, Math.round(finalSize * width / height)),
+    width: Math.max(1, Math.round((finalSize * width) / height)),
     height: finalSize,
   }
 }

@@ -4,9 +4,9 @@
 
 <h1 align="center">Frameverse</h1>
 
-Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排版工具。它可以将多张照片自动排列为网格拼图，添加留白、外边框、Logo 和文本，并按 Instagram、小红书等平台的封面比例导出高分辨率 JPEG。
+Frameverse 是一款面向摄影师和内容创作者的 Windows 与 macOS 拼图排版工具。它支持 JPEG、PNG、BMP、TIFF、HEIC/HEIF 等常见图片格式，可以将多张照片自动排列为网格拼图，添加留白、外边框、Logo 和文本，并按 Instagram、小红书等平台的封面比例导出高分辨率 JPEG。
 
-[下载最新版 Windows 安装包](https://github.com/Yuuichu/PicLayout/releases/latest)
+[下载最新版 Windows / macOS 安装包](https://github.com/Yuuichu/PicLayout/releases/latest)
 
 ![Frameverse 运行界面](docs/images/frameverse-v1.1.1.png)
 
@@ -22,17 +22,17 @@ Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排
 
 ### 社交平台画幅预设
 
-| 平台/用途 | 比例 |
-|---|---:|
-| Instagram 封面/网格 | 3:4 |
-| Instagram 内容 | 3:4 |
-| Instagram 经典竖图 | 4:5 |
-| Instagram 方图 | 1:1 |
-| Instagram 横图 | 1.91:1 |
-| 小红书竖版 | 3:4 |
-| 小红书方版 | 1:1 |
-| 小红书横版 | 4:3 |
-| 自定义画幅 | 自定义宽:高 |
+| 平台/用途           |        比例 |
+| ------------------- | ----------: |
+| Instagram 封面/网格 |         3:4 |
+| Instagram 内容      |         3:4 |
+| Instagram 经典竖图  |         4:5 |
+| Instagram 方图      |         1:1 |
+| Instagram 横图      |      1.91:1 |
+| 小红书竖版          |         3:4 |
+| 小红书方版          |         1:1 |
+| 小红书横版          |         4:3 |
+| 自定义画幅          | 自定义宽:高 |
 
 `Auto` 保持拼图自身比例。选择平台预设后，最终画布会固定为目标比例。
 
@@ -74,6 +74,7 @@ Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排
 - 极致高画质模式支持线性光缩放。
 - 支持 sRGB 输出或自定义 RGB ICC Profile。
 - 支持 Perceptual 和 Relative Colorimetric 渲染意图。
+- HEIC/HEIF HDR 源支持色调映射，并可输出带 gain map 的 Ultra HDR JPEG。
 - 可选白、黑、灰、浅灰、米色、浅蓝和浅黄背景。
 
 ## 使用方法
@@ -81,10 +82,10 @@ Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排
 ### 安装
 
 1. 打开 [Releases](https://github.com/Yuuichu/PicLayout/releases/latest)。
-2. 下载最新的 `Frameverse.Setup.<version>.exe`。
-3. 运行安装程序并选择安装目录。
+2. Windows 下载 `Frameverse Setup <version>.exe`；macOS 下载对应架构的 `.dmg`。
+3. Windows 运行安装程序；macOS 打开 DMG 后将 Frameverse 拖入 Applications。
 
-当前安装包面向 Windows x64。安装包未进行商业代码签名，Windows SmartScreen 可能显示安全提示。
+Windows 发行目标为 x64；macOS 在 Intel 与 Apple Silicon 机器上分别构建原生安装包。未签名的开发构建可能触发 Windows SmartScreen 或 macOS Gatekeeper 提示，正式分发前应完成相应平台的代码签名。
 
 ### 基本工作流
 
@@ -99,18 +100,18 @@ Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排
 
 ## 参数说明
 
-| 参数 | 默认值 | 说明 |
-|---|---:|---|
-| 最大图片 | 40 | 单次任务允许导入的最大图片数量 |
-| 内容长边 | 40% | 单张照片内容长边相对最终长边的比例 |
-| 单图边框 | 1% | 每个拼图单元四周的留白 |
-| 图片间距 | 0% | 拼图单元之间的横向/纵向间隔 |
-| 画布比例 | Auto | 自动比例、平台预设或自定义比例 |
-| 最终外边距 | 自动 | 自动按列数计算，也可输入自定义百分比 |
-| 最终长边 | 10000 px | 最终输出画布的长边尺寸 |
-| JPEG 质量 | 95 | JPEG 编码质量，范围 1-100 |
-| DPI | 300 | 写入 JPEG 的输出分辨率 |
-| 背景色 | 白色 | 拼图留白和最终画布背景颜色 |
+| 参数       |   默认值 | 说明                                 |
+| ---------- | -------: | ------------------------------------ |
+| 最大图片   |       40 | 单次任务允许导入的最大图片数量       |
+| 内容长边   |      40% | 单张照片内容长边相对最终长边的比例   |
+| 单图边框   |       1% | 每个拼图单元四周的留白               |
+| 图片间距   |       0% | 拼图单元之间的横向/纵向间隔          |
+| 画布比例   |     Auto | 自动比例、平台预设或自定义比例       |
+| 最终外边距 |     自动 | 自动按列数计算，也可输入自定义百分比 |
+| 最终长边   | 10000 px | 最终输出画布的长边尺寸               |
+| JPEG 质量  |       95 | JPEG 编码质量，范围 1-100            |
+| DPI        |      300 | 写入 JPEG 的输出分辨率               |
+| 背景色     |     白色 | 拼图留白和最终画布背景颜色           |
 
 高分辨率、大量图片、极端自定义比例或较大的外边距会增加内存占用。处理失败时，可优先降低图片数量或最终长边。
 
@@ -134,19 +135,17 @@ Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排
 
 需要：
 
-- Windows 10/11 x64 或 macOS
+- Windows 10/11 x64，或 macOS 12+
 - [Rust](https://rustup.rs)
-- Node.js 22.12-24（推荐 Node.js 22 LTS）
-- macOS 打包额外需要 Xcode 和 CMake
+- Node.js 22.12+
+- CMake
+- Windows：Visual Studio Build Tools（MSVC）
+- macOS：Xcode Command Line Tools
 
 ```bash
-# 编译 Rust 核心
-cd rust-core
-cargo build --release
-
-# 启动 Electron 开发环境
-cd ../electron-app
-npm install
+# Windows PowerShell、Windows Terminal 和 macOS Terminal 使用同一入口
+cd electron-app
+npm ci
 npm run dev
 ```
 
@@ -159,16 +158,17 @@ bash scripts/dev.sh
 ## 测试与打包
 
 ```bash
-# Rust 单元测试
-cd rust-core
-cargo test
+# 统一执行格式、类型、Clippy、Rust 测试和 Electron 构建检查
+cd electron-app
+npm run check
 
-# Electron 生产构建
-cd ../electron-app
+# 仅构建 Electron 产物
 npm run build
 
-# Windows NSIS 安装包
-npm run electron:build
+# 为当前操作系统生成安装包
+# Windows: NSIS .exe
+# macOS: DMG + ZIP
+npm run package
 ```
 
 完整构建脚本：
@@ -179,19 +179,7 @@ bash scripts/build.sh
 
 安装包输出到 `dist-electron/`。
 
-### macOS 打包
-
-在 macOS 上安装依赖后执行：
-
-```bash
-# Apple Silicon
-bash scripts/build-macos.sh arm64
-
-# Intel
-bash scripts/build-macos.sh x64
-```
-
-脚本会编译与目标架构一致的 Rust sidecar，并生成 DMG 和 ZIP。未配置 Developer ID 时会使用 ad-hoc 签名，产物仅适合本机测试；公开分发需要 Developer ID 签名和 Apple notarization。完整步骤见 [macOS 打包说明](docs/macos-packaging.md)。
+macOS 的签名、公证和发行验证步骤见 [macOS 打包说明](docs/macos-packaging.md)。
 
 ## 项目架构
 
@@ -201,6 +189,7 @@ electron-app/
   main/             Electron 主进程与 Rust sidecar 管理
   preload/          安全 IPC API
   renderer/         Vue 3 + Pinia 用户界面
+  shared/           main/preload/renderer 共用协议与 API 类型
 scripts/            开发和构建脚本
 PicsLayout_V8.py    保留的 Python/Tkinter 版本
 ```

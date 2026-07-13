@@ -8,10 +8,13 @@
     "jsx": "preserve",
     "strict": true,
     "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.web.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@renderer/*": ["renderer/src/*"]
+      "@renderer/*": ["renderer/src/*"],
+      "@shared/*": ["shared/*"]
     }
   },
-  "include": ["renderer/src/**/*"]
+  "include": ["renderer/src/**/*", "shared/**/*"]
 }

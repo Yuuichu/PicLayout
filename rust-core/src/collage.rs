@@ -528,6 +528,7 @@ mod tests {
                 target_profile_path: None,
                 rendering_intent: RenderingIntent::Perceptual,
             },
+            hdr_output: false,
         };
         let layout = FinalCollageLayout {
             grid_cols: 1,
@@ -586,6 +587,7 @@ mod tests {
                 target_profile_path: None,
                 rendering_intent: RenderingIntent::Perceptual,
             },
+            hdr_output: false,
         };
 
         let layout = FinalCollageLayout::new(4, &config, 0).unwrap();
@@ -632,6 +634,7 @@ mod tests {
                 target_profile_path: None,
                 rendering_intent: RenderingIntent::Perceptual,
             },
+            hdr_output: false,
         };
 
         let layout = FinalCollageLayout::new(2, &config, 0).unwrap();

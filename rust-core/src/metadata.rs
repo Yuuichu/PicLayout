@@ -56,10 +56,10 @@ pub fn extract_icc_profile(path: &Path) -> Result<Option<Vec<u8>>, AppError> {
 
 pub fn extract_icc_profile_from_bytes(data: &[u8]) -> Result<Option<Vec<u8>>, AppError> {
     if data.starts_with(&[0xFF, 0xD8]) {
-        return Ok(extract_jpeg_icc(&data));
+        return Ok(extract_jpeg_icc(data));
     }
     if data.starts_with(PNG_SIGNATURE) {
-        return extract_png_icc(&data);
+        return extract_png_icc(data);
     }
     Ok(None)
 }

@@ -9,7 +9,32 @@ use crate::{
     config::CollageConfig,
     dpi::{inject_dpi_into_jpeg, inject_icc_into_jpeg},
     error::AppError,
+    ultrahdr_output::{self, GainMapData},
 };
+
+/// Save the final image as JPEG, optionally embedding an Ultra HDR gain map.
+pub fn save_user_jpeg_or_ultrahdr(
+    img: &DynamicImage,
+    output: &Path,
+    config: &CollageConfig,
+    icc_profile: Option<&[u8]>,
+    gain_map: Option<&GainMapData>,
+) -> Result<(), AppError> {
+    // First, encode the base SDR JPEG
+    let sdr_jpeg = if let Ok(jpeg) = encode_turbojpeg(img, config, icc_profile) {
+        jpeg
+    } else {
+        encode_with_image_crate(img, config, icc_profile)?
+    };
+
+    // If HDR output is requested and gain map is available, assemble Ultra HDR JPEG
+    let output_bytes = match (config.hdr_output, gain_map) {
+        (true, Some(gain_map)) => ultrahdr_output::assemble_ultrahdr_jpeg(&sdr_jpeg, gain_map)?,
+        _ => sdr_jpeg,
+    };
+
+    write_atomic(output, &output_bytes, config.overwrite)
+}
 
 pub fn save_user_jpeg(
     img: &DynamicImage,
@@ -153,6 +178,7 @@ mod tests {
                 target_profile_path: None,
                 rendering_intent: RenderingIntent::Perceptual,
             },
+            hdr_output: false,
         }
     }
 

@@ -114,7 +114,10 @@
               v-for="(f, i) in store.selectedFiles"
               :key="f"
               class="thumb-tile"
-              :class="{ dragging: draggedIndex === i, dropTarget: draggedIndex !== null && draggedIndex !== i }"
+              :class="{
+                dragging: draggedIndex === i,
+                dropTarget: draggedIndex !== null && draggedIndex !== i,
+              }"
               :style="thumbTileStyle(i)"
               :title="f"
               draggable="true"
@@ -194,7 +197,10 @@
 
   <div v-else class="filmstrip-shell">
     <div class="filmstrip-header">
-      <button class="collapse-button" @click="store.setFilmstripCollapsed(!store.ui.filmstripCollapsed)">
+      <button
+        class="collapse-button"
+        @click="store.setFilmstripCollapsed(!store.ui.filmstripCollapsed)"
+      >
         <ChevronDown v-if="store.ui.filmstripCollapsed" :size="16" />
         <ChevronUp v-else :size="16" />
       </button>
@@ -255,10 +261,20 @@
             <span class="queue-name">{{ basename(f) }}</span>
           </div>
           <div class="queue-tools">
-            <button class="icon-tool" :disabled="processing" title="旋转" @click.stop="rotateImage(f)">
+            <button
+              class="icon-tool"
+              :disabled="processing"
+              title="旋转"
+              @click.stop="rotateImage(f)"
+            >
               <RotateCw :size="13" />
             </button>
-            <button class="icon-tool" :disabled="processing || i === 0" title="前移" @click.stop="moveImage(i, i - 1)">
+            <button
+              class="icon-tool"
+              :disabled="processing || i === 0"
+              title="前移"
+              @click.stop="moveImage(i, i - 1)"
+            >
               <ArrowLeft :size="13" />
             </button>
             <button
@@ -269,7 +285,12 @@
             >
               <ArrowRight :size="13" />
             </button>
-            <button class="icon-tool danger-icon" :disabled="processing" title="移除" @click.stop="removeImage(i)">
+            <button
+              class="icon-tool danger-icon"
+              :disabled="processing"
+              title="移除"
+              @click.stop="removeImage(i)"
+            >
               <X :size="13" />
             </button>
           </div>
@@ -299,7 +320,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { useAppStore } from '../stores/appStore'
-import { BACKGROUND_COLOR_OPTIONS } from '../types/protocol'
+import { BACKGROUND_COLOR_OPTIONS } from '@shared/protocol'
 import {
   buildCollageConfig,
   cloneCollageConfig,
@@ -311,10 +332,7 @@ import {
   computeTilePlacement,
   type ImageSizeLike,
 } from '../utils/previewLayout'
-import {
-  findCanvasAspectOption,
-  resolveCanvasAspectRatio,
-} from '../utils/aspectRatioPresets'
+import { findCanvasAspectOption, resolveCanvasAspectRatio } from '../utils/aspectRatioPresets'
 import {
   canvasPointToOverlayPosition,
   overlaySizeScale,
@@ -322,11 +340,14 @@ import {
   roundOverlayPercent,
 } from '../utils/overlayPosition'
 
-const props = withDefaults(defineProps<{
-  variant?: 'task' | 'viewer' | 'filmstrip'
-}>(), {
-  variant: 'viewer',
-})
+const props = withDefaults(
+  defineProps<{
+    variant?: 'task' | 'viewer' | 'filmstrip'
+  }>(),
+  {
+    variant: 'viewer',
+  }
+)
 
 const store = useAppStore()
 const s = store.settings
@@ -339,9 +360,7 @@ let previewResizeObserver: ResizeObserver | null = null
 
 const processing = computed(() => store.processing || store.renderedPreview.rendering)
 const gridCols = computed(() => Math.max(1, Math.ceil(Math.sqrt(store.selectedFiles.length))))
-const gridRows = computed(() =>
-  Math.max(1, Math.ceil(store.selectedFiles.length / gridCols.value))
-)
+const gridRows = computed(() => Math.max(1, Math.ceil(store.selectedFiles.length / gridCols.value)))
 
 const PREVIEW_MIN_HEIGHT = 260
 const PREVIEW_MAX_HEIGHT = 660
@@ -501,22 +520,19 @@ const watermarkPreviewStyle = computed(() => {
   const size = s.watermark.path ? store.imageSizes[s.watermark.path] : null
   const watermarkWidth = Math.max(1, size?.width ?? 240)
   const watermarkHeight = Math.max(1, size?.height ?? 240)
-  const scale = Math.max(0.01, s.watermark.scale_percent / 100)
-    * overlaySizeScale(geom, s.watermark.position_reference, s.finalSize)
-  const point = overlayPositionToCanvasPoint(
-    geom,
-    s.watermark.position_reference,
-    {
-      x: s.watermark.position_x_percent,
-      y: s.watermark.position_y_percent,
-    }
-  )
+  const scale =
+    Math.max(0.01, s.watermark.scale_percent / 100) *
+    overlaySizeScale(geom, s.watermark.position_reference, s.finalSize)
+  const point = overlayPositionToCanvasPoint(geom, s.watermark.position_reference, {
+    x: s.watermark.position_x_percent,
+    y: s.watermark.position_y_percent,
+  })
 
   return {
     left: `${(point.x / geom.canvasWidth) * 100}%`,
     top: `${(point.y / geom.canvasHeight) * 100}%`,
-    width: `${(watermarkWidth * scale / geom.canvasWidth) * 100}%`,
-    height: `${(watermarkHeight * scale / geom.canvasHeight) * 100}%`,
+    width: `${((watermarkWidth * scale) / geom.canvasWidth) * 100}%`,
+    height: `${((watermarkHeight * scale) / geom.canvasHeight) * 100}%`,
   }
 })
 
@@ -534,14 +550,10 @@ const textBlockPreviewStyle = computed(() => {
   const lineHeight = Math.max(1, text.line_height_px * referenceScale * scale)
   const padding = Math.max(0, text.padding_px * referenceScale * scale)
 
-  const point = overlayPositionToCanvasPoint(
-    geom,
-    text.position_reference,
-    {
-      x: text.position_x_percent,
-      y: text.position_y_percent,
-    }
-  )
+  const point = overlayPositionToCanvasPoint(geom, text.position_reference, {
+    x: text.position_x_percent,
+    y: text.position_y_percent,
+  })
   const widthPercent = textBlockWidthPercentOfCanvas(geom)
 
   return {
@@ -568,18 +580,14 @@ const textBlockDragHitboxStyle = computed(() => {
   const lineCount = Math.max(1, textBlockPreviewText.value.split(/\r?\n/).length)
   const minHeight = Math.max(
     24,
-    lineCount * text.line_height_px * referenceScale * scale
-      + text.padding_px * referenceScale * scale * 2
+    lineCount * text.line_height_px * referenceScale * scale +
+      text.padding_px * referenceScale * scale * 2
   )
 
-  const point = overlayPositionToCanvasPoint(
-    geom,
-    text.position_reference,
-    {
-      x: text.position_x_percent,
-      y: text.position_y_percent,
-    }
-  )
+  const point = overlayPositionToCanvasPoint(geom, text.position_reference, {
+    x: text.position_x_percent,
+    y: text.position_y_percent,
+  })
   const widthPercent = textBlockWidthPercentOfCanvas(geom)
 
   return {
@@ -795,19 +803,11 @@ function updateOverlayPositionFromPointer(target: OverlayDragTarget, event: Poin
   }
 
   if (target === 'watermark') {
-    const position = canvasPointToOverlayPosition(
-      geom,
-      s.watermark.position_reference,
-      canvasPoint
-    )
+    const position = canvasPointToOverlayPosition(geom, s.watermark.position_reference, canvasPoint)
     s.watermark.position_x_percent = roundOverlayPercent(position.x)
     s.watermark.position_y_percent = roundOverlayPercent(position.y)
   } else {
-    const position = canvasPointToOverlayPosition(
-      geom,
-      s.textBlock.position_reference,
-      canvasPoint
-    )
+    const position = canvasPointToOverlayPosition(geom, s.textBlock.position_reference, canvasPoint)
     s.textBlock.position_x_percent = roundOverlayPercent(position.x)
     s.textBlock.position_y_percent = roundOverlayPercent(position.y)
   }
@@ -1065,8 +1065,7 @@ onBeforeUnmount(() => {
   padding: 20px;
   background:
     linear-gradient(var(--viewer-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--viewer-grid-line) 1px, transparent 1px),
-    var(--color-viewer-bg);
+    linear-gradient(90deg, var(--viewer-grid-line) 1px, transparent 1px), var(--color-viewer-bg);
   background-size: 32px 32px;
 }
 
@@ -1146,7 +1145,10 @@ onBeforeUnmount(() => {
   background: var(--preview-bg);
   color: var(--color-text-muted);
   cursor: grab;
-  transition: border-color 0.15s, opacity 0.15s, transform 0.15s;
+  transition:
+    border-color 0.15s,
+    opacity 0.15s,
+    transform 0.15s;
 }
 
 .thumb-tile.dragging,
@@ -1444,7 +1446,11 @@ onBeforeUnmount(() => {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

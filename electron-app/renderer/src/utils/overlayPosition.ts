@@ -1,4 +1,4 @@
-import type { PositionReference } from '../types/protocol'
+import type { PositionReference } from '@shared/protocol'
 import type { PreviewGeometry } from './previewLayout'
 
 export interface OverlayPosition {
@@ -48,8 +48,8 @@ export function overlayPositionToCanvasPoint(
 ): OverlayPosition {
   const rect = overlayReferenceRect(geometry, reference)
   return {
-    x: rect.x + rect.width * normalizePercent(position.x) / 100,
-    y: rect.y + rect.height * normalizePercent(position.y) / 100,
+    x: rect.x + (rect.width * normalizePercent(position.x)) / 100,
+    y: rect.y + (rect.height * normalizePercent(position.y)) / 100,
   }
 }
 

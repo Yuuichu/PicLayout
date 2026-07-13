@@ -12,11 +12,8 @@ import type {
   TargetProfileMode,
   TextBlockConfig,
   WatermarkConfig,
-} from '../types/protocol'
-import {
-  isCanvasAspectPreset,
-  type CanvasAspectPreset,
-} from '../utils/aspectRatioPresets'
+} from '@shared/protocol'
+import { isCanvasAspectPreset, type CanvasAspectPreset } from '../utils/aspectRatioPresets'
 
 // 用户设置（持久化到 localStorage）
 const SETTINGS_KEY = 'piclayout_settings'
@@ -52,6 +49,7 @@ export interface Settings {
   targetProfileMode: TargetProfileMode
   targetProfilePath: string
   renderingIntent: RenderingIntent
+  hdrOutput: boolean
   watermarkEnabled: boolean
   watermark: WatermarkConfig
   textBlockEnabled: boolean
@@ -196,6 +194,7 @@ function defaultSettings(): Settings {
     targetProfileMode: 'srgb',
     targetProfilePath: '',
     renderingIntent: 'perceptual',
+    hdrOutput: false,
     watermarkEnabled: false,
     watermark: {
       path: '',
@@ -272,7 +271,10 @@ function normalizePositionPercent(value: unknown, fallback: number): number {
   return Math.round(normalized * 100) / 100
 }
 
-function normalizeLayoutSettings(settings: Settings, parsed: Partial<Settings> & LegacyLayoutSettings) {
+function normalizeLayoutSettings(
+  settings: Settings,
+  parsed: Partial<Settings> & LegacyLayoutSettings
+) {
   const finalSize = normalizeNumber(settings.finalSize, 10000)
   settings.finalSize = Math.min(30000, Math.max(1000, Math.round(finalSize)))
 
@@ -336,7 +338,10 @@ function sanitizeLayoutSettings(settings: Settings) {
   settings.gapXPercent = 0
   settings.gapYPercent = 0
   settings.outerBorderPercent = clampPercent(settings.outerBorderPercent, 0, 49.99, 10)
-  settings.finalSize = Math.min(30000, Math.max(1000, Math.round(normalizeNumber(settings.finalSize, 10000))))
+  settings.finalSize = Math.min(
+    30000,
+    Math.max(1000, Math.round(normalizeNumber(settings.finalSize, 10000)))
+  )
   normalizeAspectSettings(settings, settings)
 }
 
@@ -423,7 +428,13 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function moveSelectedFile(from: number, to: number) {
-    if (from === to || from < 0 || to < 0 || from >= selectedFiles.value.length || to >= selectedFiles.value.length) {
+    if (
+      from === to ||
+      from < 0 ||
+      to < 0 ||
+      from >= selectedFiles.value.length ||
+      to >= selectedFiles.value.length
+    ) {
       return
     }
     const next = [...selectedFiles.value]
@@ -527,7 +538,7 @@ export const useAppStore = defineStore('app', () => {
 
   // 处理状态
   const processing = ref(false)
-  const progress = ref(0)        // 0–100
+  const progress = ref(0) // 0–100
   const statusMessage = ref('')
   const outputFiles = ref<string[]>([])
   const processedCount = ref(0)
@@ -571,7 +582,11 @@ export const useAppStore = defineStore('app', () => {
     stageTimings.value = next
   }
 
-  function setRenderedPreview(result: PreviewResult, signature: string, source: RenderedPreviewSource) {
+  function setRenderedPreview(
+    result: PreviewResult,
+    signature: string,
+    source: RenderedPreviewSource
+  ) {
     Object.assign(renderedPreview, {
       ...result,
       signature,

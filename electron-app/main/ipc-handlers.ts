@@ -1,13 +1,16 @@
 import { BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { listSystemFonts } from './font-metadata'
 import { readExifOrientation, sizeWithExifOrientation } from './image-metadata'
-import { rustBridge, CollageConfig, PreviewImageResult, ProgressMessage } from './rust-bridge'
+import { rustBridge } from './rust-bridge'
+import type { CollageConfig, PreviewImageResult, ProgressMessage } from '../shared/protocol'
 
 export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('dialog:openImages', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择图片',
-      filters: [{ name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'tiff'] }],
+      filters: [
+        { name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'tiff', 'heic', 'heif'] },
+      ],
       properties: ['openFile', 'multiSelections'],
     })
     return result.canceled ? [] : result.filePaths
@@ -16,7 +19,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('dialog:openWatermark', async () => {
     const result = await dialog.showOpenDialog(win, {
       title: '选择水印图片',
-      filters: [{ name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'bmp'] }],
+      filters: [
+        { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'tiff', 'heic', 'heif'] },
+      ],
       properties: ['openFile'],
     })
     return result.canceled ? null : result.filePaths[0]
@@ -90,7 +95,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('preview:render', async (_event, config: CollageConfig, longEdge = 1800) => {
     if (rustBridge.isRunning()) {
-      throw new Error('Another Frameverse task is already running')
+      throw new Error('已有 Frameverse 任务正在运行')
     }
 
     return rustBridge.renderPreview(config, longEdge)

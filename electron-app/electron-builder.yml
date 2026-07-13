@@ -1,6 +1,5 @@
 appId: com.yuui.piclayout
 productName: Frameverse
-artifactName: Frameverse Setup ${version}.${ext}
 copyright: © Yuui's Frameverse
 
 directories:
@@ -11,9 +10,10 @@ files:
   - out/**/*
 
 win:
+  artifactName: Frameverse Setup ${version}.${ext}
   icon: build/icon.ico
   extraResources:
-    - from: build/sidecar/rust-core.exe
+    - from: ../rust-core/target/release/rust-core.exe
       to: rust-core.exe
     - from: build/icon.png
       to: icon.png
@@ -22,9 +22,10 @@ win:
       arch: x64
 
 mac:
-  artifactName: Frameverse-${version}-macOS-${arch}.${ext}
+  artifactName: Frameverse-${version}-${arch}.${ext}
+  icon: build/icon.png
   category: public.app-category.photography
-  icon: build/icon.icns
+  minimumSystemVersion: '12.0'
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -32,7 +33,7 @@ mac:
   binaries:
     - Contents/Resources/rust-core
   extraResources:
-    - from: build/sidecar/rust-core
+    - from: ../rust-core/target/release/rust-core
       to: rust-core
     - from: build/icon.png
       to: icon.png

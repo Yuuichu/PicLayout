@@ -1,4 +1,4 @@
-import type { TargetAspectRatio } from '../types/protocol'
+import type { TargetAspectRatio } from '@shared/protocol'
 
 export type CanvasAspectPreset =
   | 'auto'

@@ -2,44 +2,36 @@
 
 ## 构建环境
 
-macOS 包必须在 macOS 上构建。需要完整 Xcode、Node.js 22 LTS、Rust stable、CMake 和 pkg-config。
-
-使用 Homebrew 安装：
+macOS 安装包必须在 macOS 上构建。项目使用 Node.js 22、Rust stable、CMake 和 Xcode Command Line Tools；签名和公证需要完整 Xcode。
 
 ```bash
-brew install node@22 rustup cmake pkgconf
-export PATH="$(brew --prefix node@22)/bin:$(brew --prefix rustup)/bin:$PATH"
+nvm use
 rustup default stable
+cd electron-app
+npm ci
 ```
 
 ## 本地构建
 
-Apple Silicon：
+在目标架构的 Mac 上执行：
 
 ```bash
-bash scripts/build-macos.sh arm64
+cd electron-app
+npm run package
 ```
 
-Intel：
-
-```bash
-bash scripts/build-macos.sh x64
-```
+构建命令会先编译当前架构的 Rust release sidecar，再生成 DMG 和 ZIP。Apple Silicon 与 Intel 产物应分别在对应架构环境验证，避免把一个架构的 sidecar 放入另一个架构的应用包。
 
 产物写入 `dist-electron/`：
 
-- `Frameverse-<version>-macOS-<arch>.dmg`
-- `Frameverse-<version>-macOS-<arch>.zip`
+- `Frameverse-<version>-<arch>.dmg`
+- `Frameverse-<version>-<arch>.zip`
 
-每个架构必须独立构建。脚本会先为目标架构编译 Rust，再把对应 sidecar 放入 App；不要用 arm64 sidecar 打 x64 包。
-
-没有可用的 `Developer ID Application` 证书时，脚本会自动使用 ad-hoc 签名，确保 Electron helpers 和 Rust sidecar 形成完整的本地签名链。ad-hoc 签名不适用于对外分发。
+macOS Dock、应用包和 DMG 共用 `electron-app/build/icon.png`。electron-builder 在打包时从该文件生成 `.icns`，不要再维护第二份图标源文件。
 
 ## 签名与公证
 
-直接下载分发使用 `Developer ID Application` 证书。把证书导入 Keychain，或通过 electron-builder 支持的 `CSC_LINK` 和 `CSC_KEY_PASSWORD` 环境变量提供证书。
-
-公证可以使用 Apple ID 的 App 专用密码：
+公开分发需要 `Developer ID Application` 证书。可以把证书导入 Keychain，也可以通过 electron-builder 支持的环境变量提供：
 
 ```bash
 export CSC_LINK="/path/to/developer-id.p12"
@@ -47,10 +39,12 @@ export CSC_KEY_PASSWORD="p12-password"
 export APPLE_ID="developer@example.com"
 export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 export APPLE_TEAM_ID="ABCDE12345"
-PICLAYOUT_NOTARIZE=1 bash scripts/build-macos.sh arm64
+
+cd electron-app
+npm run package -- --config.mac.notarize=true
 ```
 
-不要把证书或密码写入仓库。启用 `PICLAYOUT_NOTARIZE=1` 后，缺少有效签名或 Apple 凭据会导致构建失败，这是发布构建的预期行为。
+不要把证书或密码写入仓库。没有签名身份时生成的本地测试包可能触发 Gatekeeper，不适合公开分发。
 
 ## 验证
 
@@ -59,7 +53,7 @@ codesign --verify --deep --strict --verbose=2 \
   dist-electron/mac-arm64/Frameverse.app
 spctl --assess --type execute --verbose=4 \
   dist-electron/mac-arm64/Frameverse.app
-xcrun stapler validate dist-electron/Frameverse-*-macOS-arm64.dmg
+xcrun stapler validate dist-electron/Frameverse-*.dmg
 ```
 
-未签名的本地测试包不会通过 `spctl`。正式发布前还应在一台没有开发环境的 Mac 上验证安装、图片选择、精准预览和导出。
+正式发布前，还应在一台没有开发环境的 Mac 上验证安装、图片选择、精准预览、字体扫描和导出。

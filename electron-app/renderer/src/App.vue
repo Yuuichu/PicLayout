@@ -56,18 +56,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
-import {
-  FolderOpen,
-  ImagePlus,
-  Loader2,
-  Moon,
-  Play,
-  Plus,
-  Sun,
-} from 'lucide-vue-next'
+import { FolderOpen, ImagePlus, Loader2, Moon, Play, Plus, Sun } from 'lucide-vue-next'
 import { useAppStore } from './stores/appStore'
 import frameverseMark from './assets/frameverse-mark.png'
-import type { CollageResult, PreviewResult, ProgressMessage } from './types/protocol'
+import type { CollageResult, PreviewResult, ProgressMessage } from '@shared/protocol'
 import {
   buildCollageConfig,
   cloneCollageConfig,
@@ -103,9 +95,7 @@ const outputDirLabel = computed(() => {
   return basename(store.settings.outputDir)
 })
 
-const themeTitle = computed(() =>
-  store.ui.theme === 'dark' ? '切换到浅色主题' : '切换到暗色主题'
-)
+const themeTitle = computed(() => (store.ui.theme === 'dark' ? '切换到浅色主题' : '切换到暗色主题'))
 
 const STAGE_PROGRESS: Record<string, number> = {
   processing_images: 0,
@@ -464,8 +454,12 @@ function formatCollageError(err: unknown): string {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 1120px) {

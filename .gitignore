@@ -5,7 +5,6 @@ rust-core/target/
 electron-app/node_modules/
 electron-app/out/
 electron-app/dist/
-electron-app/build/sidecar/
 electron-app/*.tsbuildinfo
 
 # Build output

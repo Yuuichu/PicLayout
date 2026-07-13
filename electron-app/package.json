@@ -5,37 +5,44 @@
   "author": "Yuui",
   "main": "out/main/index.js",
   "engines": {
-    "node": ">=22.12 <25"
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "electron-vite dev --remoteDebuggingPort 9222",
+    "rust:build": "node ../scripts/cargo.mjs build --locked --release",
+    "rust:build:debug": "node ../scripts/cargo.mjs build --locked",
+    "rust:fmt": "node ../scripts/cargo.mjs fmt -- --check",
+    "rust:clippy": "node ../scripts/cargo.mjs clippy --locked --all-targets -- -D warnings",
+    "rust:test": "node ../scripts/cargo.mjs test --locked",
+    "dev": "npm run rust:build && electron-vite dev --remoteDebuggingPort 9222",
     "build": "electron-vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "renderer:test": "node --no-warnings --experimental-strip-types --test renderer/src/utils/previewLayout.test.ts",
+    "format": "prettier --config .prettierrc.json --write \"**/*.{ts,vue,css,html,yml}\" package.json tsconfig*.json ../scripts/*.mjs ../README.md ../AGENTS.md ../CLAUDE.md",
+    "format:check": "prettier --config .prettierrc.json --check \"**/*.{ts,vue,css,html,yml}\" package.json tsconfig*.json ../scripts/*.mjs ../README.md ../AGENTS.md ../CLAUDE.md",
+    "check": "npm run format:check && npm run typecheck && npm run renderer:test && npm run rust:fmt && npm run rust:clippy && npm run rust:test && npm run build",
     "preview": "electron-vite preview",
-    "electron:build": "npm run build && electron-builder --win",
-    "electron:build:dir": "npm run build && electron-builder --win --dir",
-    "electron:build:mac": "npm run build && electron-builder --mac",
-    "electron:build:mac:dir": "npm run build && electron-builder --mac --dir"
+    "package": "npm run rust:build && npm run build && electron-builder",
+    "package:dir": "npm run rust:build && npm run build && electron-builder --dir"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@vitejs/plugin-vue": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@vitejs/plugin-vue": "^6.0.7",
     "electron": "^43.1.0",
     "electron-builder": "^26.15.3",
-    "electron-vite": "^2.3.0",
+    "electron-vite": "^5.0.0",
+    "prettier": "^3.9.5",
     "typescript": "^5.4.0",
-    "vite": "^5.0.0",
+    "vite": "^7.3.6",
     "vue": "^3.4.0",
-    "vue-tsc": "^2.0.0"
+    "vue-tsc": "^3.3.7"
   },
   "dependencies": {
     "@vueuse/core": "^10.0.0",
     "lucide-vue-next": "^0.577.0",
     "pinia": "^2.1.0"
   },
-  "allowScripts": {
-    "electron@43.1.0": true,
-    "esbuild@0.21.5": true,
-    "fsevents@2.3.3": true,
-    "vue-demi@0.14.10": true
+  "overrides": {
+    "@babel/core": "^7.29.7"
   }
 }

@@ -1,4 +1,6 @@
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -30,7 +32,7 @@
   --radius: 5px;
 }
 
-[data-theme="light"] {
+[data-theme='light'] {
   --color-bg: #e9e8e4;
   --color-toolbar: #f4f3ef;
   --color-panel: #efeee9;
@@ -63,7 +65,7 @@ body,
 }
 
 body {
-  font-family: "Inter", "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-family: 'Inter', 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
   font-size: 13px;
@@ -83,7 +85,11 @@ button {
   border: none;
   border-radius: var(--radius);
   padding: 7px 11px;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    opacity 0.16s ease;
 }
 
 button svg {
@@ -99,8 +105,8 @@ button:not(:disabled):hover {
   background: var(--color-control-hover);
 }
 
-input[type="text"],
-input[type="number"],
+input[type='text'],
+input[type='number'],
 select,
 textarea {
   width: 100%;
@@ -112,7 +118,9 @@ textarea {
   background: var(--color-control);
   color: var(--color-text);
   font-size: 12px;
-  transition: border-color 0.16s ease, background 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
 }
 
 textarea {
@@ -120,18 +128,18 @@ textarea {
   resize: vertical;
 }
 
-input[type="text"]:focus,
-input[type="number"]:focus,
+input[type='text']:focus,
+input[type='number']:focus,
 select:focus,
 textarea:focus {
   border-color: var(--color-accent);
 }
 
-input[type="checkbox"] {
+input[type='checkbox'] {
   accent-color: var(--color-accent);
 }
 
-input[type="range"] {
+input[type='range'] {
   accent-color: var(--color-accent);
 }
 

@@ -12,10 +12,12 @@ path = "src/main.rs"
 image = { version = "0.25", features = ["jpeg", "png", "bmp", "tiff"] }
 fast_image_resize = { version = "6.0.0", features = ["image", "rayon"] }
 turbojpeg = { version = "1.4.0", features = ["image"] }
+heif-rs = "26.7"
+ultrahdr-rs = "0.3"
 
 # 色彩管理与元数据
 lcms2 = "6.1"
-kamadak-exif = "0.6"
+kamadak-exif = "0.6.1"
 flate2 = "1"
 
 # 并行处理

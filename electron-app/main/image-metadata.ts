@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs'
+import { readFileSync } from 'node:fs'
 
 export interface ImageSize {
   width: number
@@ -59,8 +59,8 @@ function readExifOrientationFromApp1(data: Buffer, start: number, length: number
   const littleEndian = byteOrder === 'II'
   if (!littleEndian && byteOrder !== 'MM') return null
 
-  const readU16 = (pos: number) => littleEndian ? data.readUInt16LE(pos) : data.readUInt16BE(pos)
-  const readU32 = (pos: number) => littleEndian ? data.readUInt32LE(pos) : data.readUInt32BE(pos)
+  const readU16 = (pos: number) => (littleEndian ? data.readUInt16LE(pos) : data.readUInt16BE(pos))
+  const readU32 = (pos: number) => (littleEndian ? data.readUInt32LE(pos) : data.readUInt32BE(pos))
 
   if (readU16(tiffStart + 2) !== 42) return null
   const ifd0Offset = readU32(tiffStart + 4)

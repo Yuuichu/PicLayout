@@ -3,22 +3,25 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use image::{imageops::FilterType, DynamicImage};
+use image::{imageops, imageops::FilterType, DynamicImage, GrayImage, Luma};
 use rayon::prelude::*;
 
 use crate::{
     border::calculate_dynamic_border,
     collage::{
         create_final_collage_image, grid_dimensions, grid_shape, FinalCollageLayout, ProcessedTile,
+        TilePlacement,
     },
     color,
     config::{CollageConfig, ResolvedLayout, TargetProfileMode},
     error::AppError,
-    image_loader::{ensure_rgba_allocation_safe, load_image},
+    image_loader::{ensure_rgba_allocation_safe, load_image, LoadedImage},
     image_proc::{apply_manual_rotation, fit_long_edge, resize_high_quality_with_options},
-    jpeg_output::save_user_jpeg,
+    jpeg_output::save_user_jpeg_or_ultrahdr,
+    metadata,
     progress::{self, FailedImage, ProgressMessage, Stage, StageTiming, StageTimingDetail},
     text_block::add_text_block_to_image,
+    ultrahdr_output::{GainMapData, NEUTRAL_GAIN_VALUE},
     watermark::add_watermark_to_image,
 };
 
@@ -50,6 +53,7 @@ pub struct RenderedImageReport {
     pub warnings: Vec<String>,
     pub elapsed_ms: u128,
     pub stage_timings: Vec<StageTiming>,
+    pub gain_map: Option<GainMapData>,
 }
 
 #[derive(Debug)]
@@ -70,6 +74,13 @@ struct ProcessedImage {
     tile: ProcessedTile,
     warnings: Vec<String>,
     missing_icc: bool,
+    gain_map: Option<ProcessedGainMap>,
+}
+
+struct ProcessedGainMap {
+    image: GrayImage,
+    x: u32,
+    y: u32,
 }
 
 #[derive(Default)]
@@ -175,17 +186,32 @@ pub fn run(config: &CollageConfig) -> Result<PipelineReport, AppError> {
         message: "Saving JPEG output...".into(),
         elapsed_ms: rendered.elapsed_ms,
     });
+    let gain_map = if !config.hdr_output {
+        None
+    } else if config.has_overlay() {
+        rendered
+            .warnings
+            .push("Ultra HDR output was disabled because Logo or text overlays are enabled".into());
+        None
+    } else if rendered.gain_map.is_none() {
+        rendered
+            .warnings
+            .push("Ultra HDR output requested, but no HDR HEIC gain map was available".into());
+        None
+    } else {
+        rendered.gain_map.as_ref()
+    };
     if config.has_overlay() {
         let wm_path = config
             .output_dir
             .join(format!("{}_collage_final_watermarked.jpg", config.prefix));
-        save_user_jpeg(&rendered.image, &wm_path, config, output_icc)?;
+        save_user_jpeg_or_ultrahdr(&rendered.image, &wm_path, config, output_icc, gain_map)?;
         outputs.push(wm_path);
     } else {
         let final_path = config
             .output_dir
             .join(format!("{}_collage_final.jpg", config.prefix));
-        save_user_jpeg(&rendered.image, &final_path, config, output_icc)?;
+        save_user_jpeg_or_ultrahdr(&rendered.image, &final_path, config, output_icc, gain_map)?;
         outputs.push(final_path);
     }
 
@@ -305,21 +331,28 @@ pub fn render_final_image(
             .map(|(image_index, img_path)| {
                 let result: Result<ProcessedImage, AppError> = (|| {
                     let decode_started = Instant::now();
-                    let loaded = load_image(img_path)?;
-                    let missing_icc = loaded.icc_profile.is_none();
+                    let LoadedImage {
+                        image,
+                        orientation,
+                        icc_profile,
+                        warnings: mut image_warnings,
+                        gain_map,
+                    } = load_image(img_path)?;
+                    let missing_icc = icc_profile.is_none();
                     processing_metrics.add_decode(decode_started.elapsed().as_millis());
 
                     let color_orient_started = Instant::now();
-                    let (prepared, image_warnings) = color::prepare_image_with_metadata(
+                    let (prepared, color_warnings) = color::prepare_image_with_metadata(
                         img_path,
-                        loaded.image,
-                        loaded.orientation,
-                        loaded.icc_profile,
+                        image,
+                        orientation,
+                        icc_profile,
                         config,
                         &target_profile,
                     )?;
-                    let rotated =
-                        apply_manual_rotation(prepared, config.image_rotation_degrees(img_path));
+                    image_warnings.extend(color_warnings);
+                    let manual_rotation = config.image_rotation_degrees(img_path);
+                    let rotated = apply_manual_rotation(prepared, manual_rotation);
                     processing_metrics.add_color_orient(color_orient_started.elapsed().as_millis());
 
                     let resize_started = Instant::now();
@@ -337,6 +370,13 @@ pub fn render_final_image(
                         placement.height,
                         config.linear_light_resize(),
                     )?;
+                    let gain_map = transform_gain_map(
+                        gain_map,
+                        orientation,
+                        config.auto_orient_image(img_path),
+                        manual_rotation,
+                        &placement,
+                    );
                     processing_metrics.add_resize(resize_started.elapsed().as_millis());
                     Ok(ProcessedImage {
                         tile: ProcessedTile {
@@ -346,6 +386,7 @@ pub fn render_final_image(
                         },
                         warnings: image_warnings,
                         missing_icc,
+                        gain_map,
                     })
                 })();
 
@@ -368,11 +409,15 @@ pub fn render_final_image(
     let mut bordered_images: Vec<ProcessedTile> = Vec::new();
     let mut failed_images: Vec<FailedImage> = Vec::new();
     let mut missing_icc_count = 0usize;
+    let mut gain_maps = Vec::new();
     for result in results {
         match result {
             Ok(processed) => {
                 if processed.missing_icc {
                     missing_icc_count += 1;
+                }
+                if let Some(gm) = processed.gain_map {
+                    gain_maps.push(gm);
                 }
                 bordered_images.push(processed.tile);
                 warnings.extend(processed.warnings);
@@ -410,6 +455,7 @@ pub fn render_final_image(
         elapsed_ms: timer.total_elapsed_ms(),
     });
     let mut final_image = create_final_collage_image(&bordered_images, config, &final_layout)?;
+    let gain_map = compose_gain_map(&final_layout, gain_maps);
     timer.finish_stage(Stage::CreatingCollage);
 
     if config.has_overlay() {
@@ -454,7 +500,59 @@ pub fn render_final_image(
         warnings,
         elapsed_ms: timer.total_elapsed_ms(),
         stage_timings: timer.stage_timings,
+        gain_map,
     })
+}
+
+fn transform_gain_map(
+    gain_map: Option<GainMapData>,
+    orientation: Option<u16>,
+    auto_orient: bool,
+    manual_rotation: u16,
+    placement: &TilePlacement,
+) -> Option<ProcessedGainMap> {
+    let gain_map = gain_map?;
+    let oriented = metadata::apply_orientation(
+        DynamicImage::ImageLuma8(gain_map.image),
+        orientation,
+        auto_orient,
+    );
+    let rotated = apply_manual_rotation(oriented, manual_rotation);
+    let resized = imageops::resize(
+        &rotated.into_luma8(),
+        placement.width.div_ceil(4).max(1),
+        placement.height.div_ceil(4).max(1),
+        FilterType::Lanczos3,
+    );
+    Some(ProcessedGainMap {
+        image: resized,
+        x: placement.x / 4,
+        y: placement.y / 4,
+    })
+}
+
+fn compose_gain_map(
+    layout: &FinalCollageLayout,
+    gain_maps: Vec<ProcessedGainMap>,
+) -> Option<GainMapData> {
+    if gain_maps.is_empty() {
+        return None;
+    }
+
+    let mut canvas = GrayImage::from_pixel(
+        layout.canvas_width.div_ceil(4),
+        layout.canvas_height.div_ceil(4),
+        Luma([NEUTRAL_GAIN_VALUE]),
+    );
+    for gain_map in gain_maps {
+        imageops::overlay(
+            &mut canvas,
+            &gain_map.image,
+            gain_map.x as i64,
+            gain_map.y as i64,
+        );
+    }
+    Some(GainMapData::new(canvas))
 }
 
 fn resolve_layout(config: &CollageConfig) -> Result<ResolvedLayout, AppError> {
@@ -966,6 +1064,7 @@ mod tests {
                 target_profile_path: None,
                 rendering_intent: RenderingIntent::Perceptual,
             },
+            hdr_output: false,
         }
     }
 
@@ -985,6 +1084,41 @@ mod tests {
             return Some(u16::from_be_bytes([data[14], data[15]]));
         }
         None
+    }
+
+    #[test]
+    fn gain_map_transform_and_composition_preserve_layout() {
+        let source = GrayImage::from_fn(2, 1, |x, _| Luma([64 + x as u8 * 128]));
+        let placement = TilePlacement {
+            x: 5,
+            y: 9,
+            width: 4,
+            height: 8,
+        };
+        let transformed =
+            transform_gain_map(Some(GainMapData::new(source)), Some(6), true, 0, &placement)
+                .unwrap();
+        assert_eq!(transformed.image.dimensions(), (1, 2));
+        assert_eq!((transformed.x, transformed.y), (1, 2));
+
+        let layout = FinalCollageLayout {
+            grid_cols: 1,
+            scale: 1.0,
+            tile_size: 8,
+            gap_x: 0,
+            gap_y: 0,
+            content_x: 0,
+            content_y: 0,
+            content_width: 16,
+            content_height: 12,
+            canvas_width: 16,
+            canvas_height: 12,
+        };
+        let composed = compose_gain_map(&layout, vec![transformed]).unwrap();
+
+        assert_eq!(composed.image.dimensions(), (4, 3));
+        assert_eq!(composed.image.get_pixel(0, 0)[0], NEUTRAL_GAIN_VALUE);
+        assert_ne!(composed.image.get_pixel(1, 2)[0], NEUTRAL_GAIN_VALUE);
     }
 
     #[test]
