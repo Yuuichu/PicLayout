@@ -7,20 +7,38 @@ directories:
   output: ../dist-electron
   buildResources: build
 
-extraResources:
-  - from: ../rust-core/target/release/rust-core.exe
-    to: rust-core.exe
-  - from: build/icon.png
-    to: icon.png
-
 files:
   - out/**/*
 
 win:
   icon: build/icon.ico
+  extraResources:
+    - from: build/sidecar/rust-core.exe
+      to: rust-core.exe
+    - from: build/icon.png
+      to: icon.png
   target:
     - target: nsis
       arch: x64
+
+mac:
+  artifactName: Frameverse-${version}-macOS-${arch}.${ext}
+  category: public.app-category.photography
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  binaries:
+    - Contents/Resources/rust-core
+  extraResources:
+    - from: build/sidecar/rust-core
+      to: rust-core
+    - from: build/icon.png
+      to: icon.png
+  target:
+    - dmg
+    - zip
 
 nsis:
   oneClick: false

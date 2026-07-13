@@ -4,7 +4,7 @@
 
 <h1 align="center">Frameverse</h1>
 
-Frameverse 是一款面向摄影师和内容创作者的 Windows 拼图排版工具。它可以将多张照片自动排列为网格拼图，添加留白、外边框、Logo 和文本，并按 Instagram、小红书等平台的封面比例导出高分辨率 JPEG。
+Frameverse 是一款面向摄影师和内容创作者的 Windows/macOS 拼图排版工具。它可以将多张照片自动排列为网格拼图，添加留白、外边框、Logo 和文本，并按 Instagram、小红书等平台的封面比例导出高分辨率 JPEG。
 
 [下载最新版 Windows 安装包](https://github.com/Yuuichu/PicLayout/releases/latest)
 
@@ -134,9 +134,10 @@ Frameverse 是一款面向摄影师和内容创作者的 Windows 拼图排版工
 
 需要：
 
-- Windows 10/11 x64
+- Windows 10/11 x64 或 macOS
 - [Rust](https://rustup.rs)
-- Node.js 18+
+- Node.js 22.12-24（推荐 Node.js 22 LTS）
+- macOS 打包额外需要 Xcode 和 CMake
 
 ```bash
 # 编译 Rust 核心
@@ -177,6 +178,20 @@ bash scripts/build.sh
 ```
 
 安装包输出到 `dist-electron/`。
+
+### macOS 打包
+
+在 macOS 上安装依赖后执行：
+
+```bash
+# Apple Silicon
+bash scripts/build-macos.sh arm64
+
+# Intel
+bash scripts/build-macos.sh x64
+```
+
+脚本会编译与目标架构一致的 Rust sidecar，并生成 DMG 和 ZIP。未配置 Developer ID 时会使用 ad-hoc 签名，产物仅适合本机测试；公开分发需要 Developer ID 签名和 Apple notarization。完整步骤见 [macOS 打包说明](docs/macos-packaging.md)。
 
 ## 项目架构
 

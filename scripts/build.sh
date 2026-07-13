@@ -8,6 +8,10 @@ cd "$REPO_ROOT/rust-core"
 cargo build --release
 echo "rust-core.exe 编译完成: target/release/rust-core.exe"
 
+mkdir -p "$REPO_ROOT/electron-app/build/sidecar"
+cp "$REPO_ROOT/rust-core/target/release/rust-core.exe" \
+  "$REPO_ROOT/electron-app/build/sidecar/rust-core.exe"
+
 echo ""
 echo "=== Step 2: 安装 Node 依赖 ==="
 cd "$REPO_ROOT/electron-app"
